@@ -1,0 +1,30 @@
+# plans/city_cutin.yml
+name: city_cutin_smoke
+track: B # A: planning-only, B: full-stack (ROS2)
+runtime:
+  sim_dt: 0.01
+  time_limit_s: 30
+  resources: { cpu: 8, mem_gb: 16, gpu: none }
+  seed: 1729
+
+adapters: # 指定「類型@版本」，或 image/tag
+  sim: esmini_command
+  av: autoware_humble@1.0 # track A 可填 planner_api@0.1
+  bridge: ros2_bus@1.0
+  monitor: basic@1.0
+  metrics_pack: base_v1@1.1
+
+scenario:
+  ref: example
+  sampler: { method: lhs, n: 50 } # grid|lhs|sobol|random|boundary
+  params_override:
+    ego_init_speed: { min: 10, max: 16 }
+
+artifacts:
+  record: { rosbag: true, video: true }
+  out_dir: artifacts/
+
+fairness: # 可比較性/重現性
+  fixed_dt: true
+  resource_caps: true
+  repro_token: true

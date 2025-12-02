@@ -1,0 +1,46 @@
+# plans/mvp.yaml
+name: mvp
+mode: A # A: planning-only, B: full-stack (ROS2)
+runtime:
+  sim_dt: 0.01
+  av:
+    connect_time_limit_s: 30
+    retry: 1
+  time_limit_s: 60
+  resources:
+    cpu: 8
+    gpu: none
+    mem_gb: 16
+  seed: 123456
+  sampler: { method: lhs, n: 50 } # grid|lhs|sobol|random|boundary
+
+adapters: # 指定「類型@版本」，或 image/tag
+  sim: esmini
+  av: keyboard
+  bridge: none
+  monitor: default
+
+artifacts:
+  record:
+    - rosbag
+    - video
+    - state
+  out_dir: artifacts/mvp
+
+scenarios:
+  - scenarios/mvp/plan.yaml
+
+simulator:
+  name: esmini
+  cfg_path: configs/sim/esmini_base.yaml
+
+av:
+  name: keyboard
+  cfg_path: configs/av/keyboard.yaml
+
+bridge:
+  name: none
+
+monitor:
+  name: default
+  cfg_path: configs/monitor/default.yaml

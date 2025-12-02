@@ -1,0 +1,105 @@
+esmini GIT REV: v2.52.2-0-a7cdd5b
+esmini GIT TAG: v2.52.2
+esmini GIT BRANCH: tags/v2.52.2^0
+esmini BUILD VERSION: N/A - client build
+[] [info] Loaded scenarios/example/xosc/cut-in.xosc
+[2025-10-27 08:20:10]
+[] [info] Player options: --osc scenarios/example/xosc/cut-in.xosc --camera_mode orbit --fixed_timestep 0.01 --headless --info_text 1 --logfile_path log.txt --log_level info --path /opt/esmini/resources/Catalogs/ /opt/esmini/resources/xosc/ ./ --record artifacts/RUN-d610fd89/sim.dat --text_scale 1.0 --traj_filter 0.1 
+[] [info] Run simulation decoupled from realtime, with fixed timestep: 0.01
+[] [info] Added path /opt/esmini/resources/Catalogs/
+[] [info] Added path /opt/esmini/resources/xosc/
+[] [info] Added path ./
+[] [info] Generated seed 3407083293
+[] [info] Loading scenarios/example/xosc/cut-in.xosc (v1.1)
+[] [info] 0 variables
+[] [error] Unsupported geo reference attr: +no_defs
+[] [error] Unsupported object type: rail-pole - interpret as NONE
+[] [error] Unsupported object type: rail-pole - interpret as NONE
+[] [error] Unsupported object type: guide-post - interpret as NONE
+[] [error] Unsupported object type: guide-post - interpret as NONE
+[] [info] Loaded OpenDRIVE: scenarios/example/xosc/../xodr/e6mini.xodr
+[] [info] Expr ${250/3.6} = 250/3.6 = 69.4444444444
+[] [info] Expr ${$EgoSpeed / 3.6} = 108 / 3.6 = 30.0000000000
+[] [info] Expr ${BrakeCondition_HWT + _ + $HeadwayTime_Brake} = BrakeCondition_HWT + _ + 0.7 = BrakeCondition_HWT_0.7
+[] [info] 7 parameters:
+[] [info]    TargetSpeedFactor = 1.2
+[] [info]    EgoSpeed = 108
+[] [info]    HeadwayTime_Brake = 0.7
+[] [info]    HeadwayTime_LaneChange = 0.4
+[] [info]    EgoStartS = 50
+[] [info]    TargetVehicle = car_red
+[] [info]    HostVehicle = car_white
+[0.000] [info] Recording data to file artifacts/RUN-d610fd89/sim.dat
+[0.000] [info] Init Ego TeleportAction initState -> startTransition -> runningState
+[0.000] [info] Starting teleport Action
+[0.000] [info] Ego New position:
+[0.000] [info] Pos(8.17, 49.97, -0.04) Rot(1.57, 0.00, 0.00) roadId 0 laneId -3 s 50.00 offset 0.00 t -8.00
+[0.000] [info] Init Ego LongitudinalAction initState -> startTransition -> runningState
+[0.000] [info] Init OverTaker TeleportAction initState -> startTransition -> runningState
+[0.000] [info] Starting teleport Action
+[0.000] [info] OverTaker New position:
+[0.000] [info] Pos(4.51, 24.98, -0.01) Rot(1.57, 0.00, 0.00) roadId 0 laneId -2 s 25.00 offset 0.00 t -4.42
+[0.000] [info] storyBoard initState -> startTransition -> runningState
+[0.000] [info] CutInAndBrakeStory initState -> startTransition -> runningState
+[0.000] [info] CutInAndBrakeAct initState -> initToStandbyTransition -> standbyState
+[0.000] [info] Init Ego TeleportAction runningState -> endTransition -> completeState
+[0.000] [info] Init Ego LongitudinalAction runningState -> endTransition -> completeState
+[0.000] [info] Init OverTaker TeleportAction runningState -> endTransition -> completeState
+[0.010] [info] CutInActStart: true, delay: 0.00, 0.0100 > 0.0000, edge: none
+[0.010] [info] Trigger /------------------------------------------------
+[0.010] [info] Group 0:
+[0.010] [info] CutInActStart: true
+[0.010] [info] Trigger  ------------------------------------------------/
+[0.010] [info] CutInAndBrakeAct standbyState -> startTransition -> runningState
+[0.010] [info] CutInAndBrakeSequence initState -> startTransition -> runningState
+[0.010] [info] CutInManeuver initState -> startTransition -> runningState
+[0.010] [info] OverTakerStartSpeedEvent initState -> initToStandbyTransition -> standbyState
+[0.010] [info] CutInEvent initState -> initToStandbyTransition -> standbyState
+[0.010] [info] OvertakerBrakeEvent initState -> initToStandbyTransition -> standbyState
+[0.010] [info] OverTakerStartSpeedCondition: true, delay: 0.00, CutInAndBrakeAct, RUNNING / START_TRANSITION == START_TRANSITION, edge: none
+[0.010] [info] Trigger /------------------------------------------------
+[0.010] [info] Group 0:
+[0.010] [info] OverTakerStartSpeedCondition: true
+[0.010] [info] Trigger  ------------------------------------------------/
+[0.010] [info] OverTakerStartSpeedEvent standbyState -> startTransition -> runningState
+[0.010] [info] OverTakerStartSpeedAction initState -> startTransition -> runningState
+[6.240] [info] CutInStartCondition: true, delay: 0.00, HWT: 0.40 > 0.40, edge rising
+[6.240] [info] Trigger /------------------------------------------------
+[6.240] [info] Group 0:
+[6.240] [info] CutInStartCondition: true
+[6.240] [info] Triggering entity 0: Ego
+[6.240] [info] Trigger  ------------------------------------------------/
+[6.240] [info] OverTakerStartSpeedAction runningState -> endTransition -> completeState
+[6.240] [info] OverTakerStartSpeedEvent complete after 1 execution
+[6.240] [info] OverTakerStartSpeedEvent runningState -> endTransition -> completeState
+[6.240] [info] Event OverTakerStartSpeedEvent ended, overwritten by event CutInEvent
+[6.240] [info] CutInEvent standbyState -> startTransition -> runningState
+[6.240] [info] CutInAction initState -> startTransition -> runningState
+[7.740] [info] BrakeCondition_HWT_0.7: true, delay: 0.00, HWT: 0.70 > 0.70, edge rising
+[7.740] [info] Trigger /------------------------------------------------
+[7.740] [info] Group 0:
+[7.740] [info] BrakeCondition_HWT_0.7: true
+[7.740] [info] Triggering entity 0: Ego
+[7.740] [info] Trigger  ------------------------------------------------/
+[7.740] [info] Other events ongoing, OvertakerBrakeEvent will run in parallel
+[7.740] [info] OvertakerBrakeEvent standbyState -> startTransition -> runningState
+[7.740] [info] OvertakerBrakeAction initState -> startTransition -> runningState
+[9.230] [info] CutInAction runningState -> endTransition -> completeState
+[9.230] [info] CutInEvent complete after 1 execution
+[9.230] [info] CutInEvent runningState -> endTransition -> completeState
+[16.730] [info] OvertakerBrakeAction runningState -> endTransition -> completeState
+[16.730] [info] OvertakerBrakeEvent complete after 1 execution
+[16.730] [info] OvertakerBrakeEvent runningState -> endTransition -> completeState
+[16.730] [info] CutInManeuver runningState -> endTransition -> completeState
+[16.730] [info] CutInAndBrakeSequence complete after 1 execution
+[16.730] [info] CutInAndBrakeSequence runningState -> endTransition -> completeState
+[16.730] [info] CutInAndBrakeAct runningState -> endTransition -> completeState
+[16.730] [info] CutInAndBrakeStory runningState -> endTransition -> completeState
+[16.740] [info] StopCondition: true, delay: 5.00, CutInManeuver, COMPLETE / END_TRANSITION == END_TRANSITION, edge: rising
+[16.750] [info] StopCondition: false, delay: 5.00, CutInManeuver, COMPLETE / UNDEFINED_TRANSITION == END_TRANSITION, edge: rising
+[21.740] [info] Trigger /------------------------------------------------
+[21.740] [info] Group 0:
+[21.740] [info] StopCondition: true
+[21.740] [info] Trigger  ------------------------------------------------/
+[21.740] [info] storyBoard runningState -> stopTransition -> completeState
+[21.740] [info] Closing

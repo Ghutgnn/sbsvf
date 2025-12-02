@@ -1,0 +1,33 @@
+[project]
+name = "sv"
+version = "0.1.0"
+description = "Scenario validator CLI"
+readme = "README.md"
+requires-python = ">=3.9"
+dependencies = [
+  "pydantic>=2.7",
+  "pyyaml>=6.0",
+  "typer>=0.12",
+  "rich>=13.7",
+  "pandas>=2.2",
+  "numpy>=1.26",
+  "jinja2>=3.1",
+]
+
+[project.scripts]
+sv = "sv.cli:app"
+
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+# 關鍵：只讓 setuptools 打包 sv*，排除其他頂層資料夾
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["sv*"]
+exclude = ["plans*", "infra*", "adapters*", "scenarios*", "docs*"]
+
+# （可選）如果 sv/ 內有要一起安裝的非 .py 檔（例如 jinja 模板、schema）
+# 取消下面註解並調整 pattern
+# [tool.setuptools.package-data]
+# "sv" = ["**/*.j2", "**/*.jinja2", "**/*.yaml", "**/*.yml"]

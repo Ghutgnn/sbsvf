@@ -1,0 +1,6 @@
+esmini_home: /home/hcis-s05/Downloads/esmini-demo/
+extra_paths:
+  - /home/hcis-s05/Downloads/esmini-demo/resources/xodr/
+  - /home/hcis-s05/Downloads/esmini-demo/resources/xosc/
+  - /home/hcis-s05/Downloads/esmini-demo/resources/models/
+  - /home/hcis-s05/Downloads/esmini-demo/resources/openx-assets/catalogs/

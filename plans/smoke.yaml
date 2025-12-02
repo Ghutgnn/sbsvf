@@ -1,0 +1,18 @@
+name: smoke
+pool: local
+max_parallel: 1
+retries: 0
+keep_artifacts: true
+scenarios:
+  - ref: registry:example
+    sampler: {method: grid, n: 1}
+runtime:
+  time_limit_s: 5
+  sim_dt: 0.05
+  docker: {image: local/dev} # 教學階段未用
+bridges:
+  av: none
+  sensors: none
+resources:
+  cpu_limit: 4
+  mem_limit_gb: 8

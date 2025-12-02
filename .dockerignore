@@ -1,0 +1,13 @@
+.scenarios_cache/
+outputs/
+*.log
+*.pyc
+__pycache__/
+.git/
+plans/
+scenarios/
+adapters/
+artifacts/
+docs/
+infra/
+plans/

@@ -1,0 +1,6 @@
+esmini_home: /home/hcis-s05/ysws/esmini_ori/
+extra_paths:
+  - /home/hcis-s05/ysws/esmini_ori/resources/xodr/
+  - /home/hcis-s05/ysws/esmini_ori/resources/xosc/
+  - /home/hcis-s05/ysws/esmini_ori/resources/models/
+  - /home/hcis-s05/ysws/esmini_ori/resources/openx-assets/catalogs/
