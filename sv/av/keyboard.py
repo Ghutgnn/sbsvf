@@ -1,4 +1,5 @@
-from typing import Any
+import logging
+from typing import Any, Optional
 from pathlib import Path
 import ctypes as ct
 from pynput import keyboard
@@ -7,6 +8,9 @@ from sv.registry import register_av
 from sv.utils.util import get_cfg
 from sv.utils.sps import ScenarioPack
 from sv.utils.control import Ctrl, CtrlMode
+
+
+logger = logging.getLogger(__name__)
 
 
 @register_av("keyboard")
@@ -51,10 +55,11 @@ class KeyboardAV:
         self.listener.start()
         self.running = True
 
-    def reset(self, sps: ScenarioPack) -> None:
+    def reset(self, sps: ScenarioPack, params: Optional[dict] = None) -> None:
         """Reset AV internal state (e.g. when simulator resets)."""
         self.pedal = 0
         self.wheel = 0
+        self.running = True
 
     def step(self, obs: dict[str, Any], dt: float) -> Ctrl:
         """
@@ -77,6 +82,7 @@ class KeyboardAV:
     def stop(self) -> None:
         """Stop keyboard listener and clean up."""
         if self.listener is not None:
+            logger.info("Stopping keyboard listener...")
             self.listener.stop()
             self.listener = None
         self.running = False

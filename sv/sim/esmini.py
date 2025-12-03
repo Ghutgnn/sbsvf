@@ -5,7 +5,7 @@ import tempfile
 import pathlib
 import time
 from enum import Enum, auto
-from typing import Any, Union
+from typing import Any, Optional, Union
 from sv.registry import register_sim
 from pathlib import Path
 from math import pi
@@ -78,22 +78,21 @@ class Vehicle:
 
     def __init__(self, se, x, y, h, length, speed):
         self._se = se
-        self.pedal = 0  # -1 brake, 0 neutral, 1 accel
-        self.wheel = 0  # -1 right, 0 straight, 1 left(沿用原本邏輯)
 
         self.sv_handle = self._se.SE_SimpleVehicleCreate(x, y, h, length, speed)
         self.vh_state = SESimpleVehicleState()
+        self._se.SE_SimpleVehicleGetState(self.sv_handle, ct.byref(self.vh_state))
 
     def apply_control(self, ctrl: Ctrl, dt):
-        if ctrl.mode == CtrlMode.THROTTLE_STEER:
+        if ctrl.mode == CtrlMode.None_:
+            return
+        elif ctrl.mode == CtrlMode.THROTTLE_STEER:
             logger.debug(
                 f"Applying control: pedal={ctrl.payload.get('pedal', 0)}, wheel={ctrl.payload.get('wheel', 0)}, dt={dt}"
             )
-            self.pedal = int(ctrl.payload.get("pedal", 0))
-            self.wheel = int(ctrl.payload.get("wheel", 0))
-            self._se.SE_SimpleVehicleControlBinary(
-                self.sv_handle, dt, self.pedal, self.wheel
-            )
+            pedal = int(ctrl.payload.get("pedal", 0))
+            wheel = int(ctrl.payload.get("wheel", 0))
+            self._se.SE_SimpleVehicleControlBinary(self.sv_handle, dt, pedal, wheel)
             # Update vehicle state
             self._se.SE_SimpleVehicleGetState(self.sv_handle, ct.byref(self.vh_state))
 
@@ -130,6 +129,10 @@ class EsminiAdapter:
         self.obj_states = SEScenarioObjectState()
         self.log_file_path = self.cfg.get("log_file_path", "./esmini_log.txt")
         self.se = ct.CDLL(self.esmini_home + "bin/libesminiLib.so")  # Linux
+        self._c_param_cb = None
+        self._params_obj = None
+        self._params_ptr = None
+        self.vehicle = None
         self._setup_esmini_opts()
         self._setup_function_signatures()
 
@@ -143,6 +146,7 @@ class EsminiAdapter:
     def _setup_function_signatures(self):
         se = self.se
 
+        # SE_DLL_API void *SE_SimpleVehicleCreate(float x, float y, float h, float length, float speed);
         se.SE_SimpleVehicleCreate.argtypes = [
             ct.c_float,
             ct.c_float,
@@ -152,19 +156,28 @@ class EsminiAdapter:
         ]
         se.SE_SimpleVehicleCreate.restype = ct.c_void_p
 
+        # SE_DLL_API void SE_SimpleVehicleGetState(void *handleSimpleVehicle, SE_SimpleVehicleState *state);
         se.SE_SimpleVehicleGetState.argtypes = [ct.c_void_p, ct.c_void_p]
+        se.SE_SimpleVehicleGetState.restype = None
+
+        # SE_DLL_API void SE_SimpleVehicleControlBinary(void *handleSimpleVehicle, double dt, int throttle, int steering);
         se.SE_SimpleVehicleControlBinary.argtypes = [
             ct.c_void_p,
             ct.c_double,
             ct.c_int,
             ct.c_int,
         ]
+        se.SE_SimpleVehicleControlBinary.restype = None
+
+        # SE_DLL_API void SE_SimpleVehicleControlAnalog(void  *handleSimpleVehicle, double dt, double throttle, double steering);
         se.SE_SimpleVehicleControlAnalog.argtypes = [
             ct.c_void_p,
             ct.c_double,
             ct.c_double,
             ct.c_double,
         ]
+        se.SE_SimpleVehicleControlAnalog.restype = None
+
         se.SE_SimpleVehicleControlTarget.argtypes = [
             ct.c_void_p,
             ct.c_double,
@@ -180,6 +193,37 @@ class EsminiAdapter:
             ct.c_float,
             ct.c_float,
         ]
+        # SE_DLL_API void SE_RegisterParameterDeclarationCallback(void (*fnPtr)(void *), void *user_data);
+        self._PARAM_CB_TYPE = ct.CFUNCTYPE(None, ct.c_void_p)
+        self.se.SE_RegisterParameterDeclarationCallback.argtypes = [
+            self._PARAM_CB_TYPE,
+            ct.c_void_p,
+        ]
+        self.se.SE_RegisterParameterDeclarationCallback.restype = None
+
+        # SE_DLL_API const char *SE_GetVariableName(int index, int *type);
+        self.se.SE_GetVariableName.argtypes = [ct.c_int, ct.c_char_p]
+        self.se.SE_GetVariableName.restype = ct.c_char_p
+
+        # SE_DLL_API int SE_SetParameterBool(const char *parameterName, bool value);
+        self.se.SE_SetParameterBool.argtypes = [ct.c_char_p, ct.c_bool]
+        self.se.SE_SetParameterBool.restype = None
+
+        # SE_DLL_API int SE_GetVariableInt(const char *variableName, int *value);
+        self.se.SE_SetParameterInt.argtypes = [ct.c_char_p, ct.c_int]
+        self.se.SE_SetParameterInt.restype = None
+
+        # SE_DLL_API int SE_GetVariableDouble(const char *variableName, double *value);
+        self.se.SE_SetParameterDouble.argtypes = [ct.c_char_p, ct.c_double]
+        self.se.SE_SetParameterDouble.restype = None
+
+        # SE_DLL_API int SE_GetVariableString(const char *variableName, const char **value);
+        self.se.SE_SetParameterString.argtypes = [ct.c_char_p, ct.c_char_p]
+        self.se.SE_SetParameterString.restype = None
+
+        # SE_DLL_API const char *SE_GetParameterName(int index, int *type);
+        se.SE_GetParameterName.argtypes = [ct.c_int, ct.POINTER(ct.c_int)]
+        se.SE_GetParameterName.restype = ct.c_char_p
 
         se.SE_GetSimTimeStep.restype = ct.c_float
         se.SE_StepDT.argtypes = [ct.c_float]
@@ -250,9 +294,108 @@ class EsminiAdapter:
 
     def stop(self):
         self.se.SE_Close()
-        self.se.SE_SimpleVehicleDelete(self.vehicle.sv_handle)
+        if self.vehicle is not None:
+            self.se.SE_SimpleVehicleDelete(self.vehicle.sv_handle)
 
-    def reset(self, sps: ScenarioPack):
+    def parameter_declaration_callback(self, params: dict[str, Any]) -> int:
+        """
+        這個是你真的想寫的邏輯：用 dict 設定 parameter。
+        C 那邊看不到這個，只會呼叫底下包好的 _c_param_cb。
+        """
+        n = self.se.SE_GetNumberOfParameters()
+        param_type = {}
+        for i in range(n):
+            ptype = ct.c_int()
+            param_name = self.se.SE_GetParameterName(i, ct.byref(ptype)).decode("utf-8")
+            param_type[param_name] = ptype.value
+            # print(f"esmini parameter {i}: {param_name} (type {ptype.value})")
+
+        for name, value in params.items():
+            if name not in param_type:
+                logger.warning(
+                    f"Parameter {name} not found in esmini parameters. Skip."
+                )
+                continue
+
+            ptype = param_type[name]
+            if ptype == 1:  # int
+                try:
+                    v = int(value)
+                except (TypeError, ValueError):
+                    # print(f"  skip {name} = {value} (not an int)")
+                    logger.warning(
+                        f"Parameter {name} value {value} is not an int. Skip."
+                    )
+                    continue
+
+                self.se.SE_SetParameterInt(name.encode("utf-8"), v)
+                logger.info(f"  set {name} = {v}")
+            elif ptype == 2:  # double
+                try:
+                    v = float(value)
+                except (TypeError, ValueError):
+                    logger.warning(
+                        f"Parameter {name} value {value} is not a float. Skip."
+                    )
+                    continue
+
+                self.se.SE_SetParameterDouble(name.encode("utf-8"), v)
+                logger.info(f"  set {name} = {v}")
+            elif ptype == 3:  # string
+                v = str(value)
+                self.se.SE_SetParameterString(name.encode("utf-8"), v.encode("utf-8"))
+                logger.info(f"  set {name} = {v}")
+            elif ptype == 4:  # bool
+                try:
+                    v = bool(value)
+                except (TypeError, ValueError):
+                    logger.warning(
+                        f"Parameter {name} value {value} is not a bool. Skip."
+                    )
+                    continue
+
+                self.se.SE_SetParameterBool(name.encode("utf-8"), v)
+                logger.info(f"  set {name} = {v}")
+            else:
+                # print(f"  skip {name} = {value} (unknown parameter type {ptype})")
+                logger.warning(f"Parameter {name} has unknown type {ptype}. Skip.")
+                continue
+
+        # 這個 return 給自己用就好，C callback 是 void，不會用到
+        return 0
+
+    def _get_parameter(self, sps: ScenarioPack) -> dict[str, Any]:
+        self
+
+    def reset(self, sps: ScenarioPack, params: Optional[dict] = None):
+        self.stop()
+        if params is None:
+            params = {}
+
+        # 1) 把 params 包成 py_object，並轉成 void* 當 user_data
+        self._params_obj = ct.py_object(params)
+        self._params_ptr = ct.cast(ct.pointer(self._params_obj), ct.c_void_p)
+
+        # 2) 建立一次 C 用的 callback（void (*)(void*)）
+        if self._c_param_cb is None:
+
+            @self._PARAM_CB_TYPE
+            def _c_param_cb(user_data):
+
+                py_obj_ptr = ct.cast(user_data, ct.POINTER(ct.py_object))
+                params_dict = py_obj_ptr.contents.value
+
+                # 呼叫你自己的高階 callback
+                self.parameter_declaration_callback(params_dict)
+
+            self._c_param_cb = _c_param_cb  # hold reference
+
+        # 3) 在 SE_Init 前註冊 callback
+        self.se.SE_RegisterParameterDeclarationCallback(
+            self._c_param_cb,
+            self._params_ptr,
+        )
+        self._setup_esmini_opts()
         ret = self.se.SE_Init(str(sps.scenarios["xosc"]).encode(), 1, 1, 0, 0)
         if ret != 0:
             raise RuntimeError(f"esmini SE_Init failed with code {ret}")

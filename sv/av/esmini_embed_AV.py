@@ -1,5 +1,5 @@
 import logging
-from typing import Any
+from typing import Any, Optional
 import ctypes as ct
 from sv.registry import register_av
 from sv.utils.control import Ctrl, CtrlMode
@@ -37,6 +37,7 @@ class EsminiEmbedAV:
         self.obj_states = SEScenarioObjectState()
         self.log_file_path = self.cfg.get("log_file_path", "./esmini_log.txt")
         self.se = ct.CDLL(self.esmini_home + "bin/libesminiLib.so")
+        self.agent: Optional[Vehicle] = None
         self._setup_esmini_opts()
         self._setup_function_signatures()
 
@@ -44,7 +45,7 @@ class EsminiEmbedAV:
         self.se.SE_SetLogFilePath(self.log_file_path.encode())
         for extra_path in self.extra_paths:
             self.se.SE_AddPath(extra_path.encode())
-        # self.se.SE_SetWindowPosAndSize(1920, 60, 1920, 1080)
+        self.se.SE_SetWindowPosAndSize(1920, 60, 1920, 1080)
         self.se.SE_LogToConsole(0)
 
     def _setup_function_signatures(self):
@@ -86,7 +87,8 @@ class EsminiEmbedAV:
     def init(self) -> None:
         pass
 
-    def reset(self, sps: ScenarioPack) -> None:
+    def reset(self, sps: ScenarioPack, params: Optional[dict] = None) -> None:
+        self.stop()
         ret = self.se.SE_Init(str(sps.maps["dummy"]).encode(), 0, 8, 0, 0)
         if ret != 0:
             raise RuntimeError(f"esmini SE_Init failed with code {ret}")
@@ -123,7 +125,8 @@ class EsminiEmbedAV:
 
     def stop(self) -> None:
         self.se.SE_Close()
-        self.se.SE_SimpleVehicleDelete(self.agent.sv_handle)
+        if self.agent is not None:
+            self.se.SE_SimpleVehicleDelete(self.agent.sv_handle)
 
     def should_quit(self) -> bool:
         return self.se.SE_GetQuitFlag() != 0

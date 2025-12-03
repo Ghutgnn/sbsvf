@@ -207,6 +207,7 @@ class ScenarioPack:
     name: str
     maps: dict[str, Path]  # map format -> path
     scenarios: dict[str, Path]
+    param_range_file: Path
     ego: EgoConfig
 
     @classmethod
@@ -222,6 +223,13 @@ class ScenarioPack:
                 for fmt, p in data["scenarios"].items()
             }
             ego = EgoConfig.from_dict(data["ego"])
+
+            param_range_file = None
+            if "param_range_file" in data:
+                param_range_file = Path("scenarios").resolve() / Path(
+                    data["param_range_file"]
+                )
+
         except KeyError as e:
             raise ValueError(f"ScenarioPack 缺少必要欄位: {e}") from None
 
@@ -230,6 +238,7 @@ class ScenarioPack:
             maps=maps,
             scenarios=scenarios,
             ego=ego,
+            param_range_file=param_range_file,
         )
 
     @classmethod

@@ -28,7 +28,7 @@ artifacts:
   out_dir: artifacts/mvp
 
 scenarios:
-  - scenarios/mvp/plan.yaml
+  - scenarios/mvp_distribution/plan.yaml
 
 simulator:
   name: esmini
@@ -44,3 +44,6 @@ bridge:
 monitor:
   name: default
   cfg_path: configs/monitor/default.yaml
+
+sampler:
+  name: grid_search

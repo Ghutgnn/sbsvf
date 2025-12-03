@@ -1,5 +1,5 @@
 # plans/esmini_embed.yaml
-name: esmini_embedded_controller
+name: esmini_embedded_controller_distribution
 mode: A # A: planning-only, B: full-stack (ROS2)
 runtime:
   sim_dt: 0.01
@@ -12,7 +12,6 @@ runtime:
     gpu: none
     mem_gb: 16
   seed: 123456
-  sampler: { method: lhs, n: 50 } # grid|lhs|sobol|random|boundary
 
 # adapters: # 指定「類型@版本」，或 image/tag
 #   sim: esmini
@@ -28,7 +27,7 @@ artifacts:
   out_dir: artifacts/mvp
 
 scenarios:
-  - scenarios/mvp/plan.yaml
+  - scenarios/mvp_distribution/plan.yaml
 
 simulator:
   name: esmini

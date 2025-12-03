@@ -24,6 +24,7 @@ import sv.sim
 import sv.av
 import sv.bridge
 import sv.monitor
+import sv.sampler
 
 logger = logging.getLogger(__name__)
 
@@ -49,6 +50,7 @@ class Manager:
             av_cfg=self.config["av"],
             bridge_cfg=self.config["bridge"],
             monitor_cfg=self.config["monitor"],
+            sampler_cfg=self.config.get("sampler", {}),
             sps=scenario_pack,
         )
         runner.exec()
