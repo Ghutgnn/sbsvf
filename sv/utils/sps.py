@@ -1,12 +1,12 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import List, Literal, Tuple, Any, Dict
 import yaml
 
 from sv.utils.util import get_cfg
-from sv.utils.position import PositionType, Position
+from sv.utils.position import PositionFactory, Position
 
 
 @dataclass
@@ -14,81 +14,11 @@ class SpawnConfig:
     position: Position
     speed: float
 
-    # def __post_init__(self) -> None:
-    #     if self.type == "WorldPosition":
-    #         # 這裡你可以依實際需求改成只接受 3 or 6 個數
-    #         if len(self.value) not in (3, 6):
-    #             raise ValueError(
-    #                 f"spawn.type=WorldPosition 時，value 應該是 [x, y, z] 或 [x, y, z, h, p, r]，"
-    #                 f"但目前長度是 {len(self.value)}: {self.value}"
-    #             )
-    #     elif self.type == "LanePosition":
-    #         if len(self.value) not in (4, 5):
-    #             raise ValueError(
-    #                 f"spawn.type=LanePosition 時，value 應該是 [roadId, laneId, s, offset(, orientation)]，"
-    #                 f"但目前長度是 {len(self.value)}: {self.value}"
-    #             )
-    #     else:
-    #         raise ValueError(
-    #             f"spawn.type 只能是 'WorldPosition' 或 'LanePosition'，目前是 {self.type!r}"
-    #         )
-
-
-# @dataclass
-# class CheckPointConfig:
-#     type: PositionType
-#     value: Tuple[float, ...]
-#     tolerance: float
-#     speed: float
-#     speed_tolerance: Tuple[float, float]
-#     time_limit: float
-#     time_fatal: bool
-
-#     def __post_init__(self) -> None:
-#         if self.type == "WorldPosition":
-#             if len(self.value) not in (3, 6):
-#                 raise ValueError(
-#                     f"check_point(type=WorldPosition) value 應該是 [x, y, z] 或 [x, y, z, h, p, r]，"
-#                     f"但目前長度是 {len(self.value)}: {self.value}"
-#                 )
-#         elif self.type == "LanePosition":
-#             if len(self.value) not in (4, 5):
-#                 raise ValueError(
-#                     f"check_point(type=LanePosition) value 應該是 [roadId, laneId, s, offset(, orientation)]，"
-#                     f"但目前長度是 {len(self.value)}: {self.value}"
-#                 )
-#         else:
-#             raise ValueError(
-#                 f"check_point.type 只能是 'WorldPosition' 或 'LanePosition'，目前是 {self.type!r}"
-#             )
-
-#         if len(self.speed_tolerance) != 2:
-#             raise ValueError(
-#                 f"speed_tolerance 應為 [a, b] 兩個數值 (speed-a ~ speed+b)，目前是 {self.speed_tolerance}"
-#             )
-
 
 @dataclass
 class GoalConfig:
     position: Position
     # speed: float
-
-    # def __post_init__(self) -> None:
-    #     if self.type == "WorldPosition":
-    #         if len(self.value) != 3:
-    #             raise ValueError(
-    #                 f"goal(type=WorldPosition) value 應該是 [x, y, z]，目前長度是 {len(self.value)}: {self.value}"
-    #             )
-    #     elif self.type == "LanePosition":
-    #         if len(self.value) != 4:
-    #             raise ValueError(
-    #                 f"goal(type=LanePosition) value 應該是 [roadId, laneId, s, offset]，"
-    #                 f"目前長度是 {len(self.value)}: {self.value}"
-    #             )
-    #     else:
-    #         raise ValueError(
-    #             f"goal.type 只能是 'WorldPosition' 或 'LanePosition'，目前是 {self.type!r}"
-    #         )
 
 
 @dataclass
@@ -100,7 +30,11 @@ class EgoConfig:
 
     # ---- 解析 YAML 的工廠方法 ----
     @classmethod
-    def from_dict(cls, ego: Dict[str, Any]) -> "EgoConfig":
+    def from_dict(cls, ego: Dict[str, Any], xodr_path: Path) -> "EgoConfig":
+        position_factory = PositionFactory(
+            lib_path="/opt/esmini/bin/libesminiRMLib.so",
+            xodr_path=xodr_path.resolve(),
+        )
 
         try:
             target_speed = float(ego["target_speed"])
@@ -116,46 +50,56 @@ class EgoConfig:
         except KeyError:
             raise ValueError("ego.spawn 未設定")
 
+        if spawn_raw["type"] == "LanePosition":
+            spawn_pos = position_factory.from_lane(
+                road_id=int(spawn_raw["value"][0]),
+                lane_id=int(spawn_raw["value"][1]),
+                s=float(spawn_raw["value"][2]),
+                offset=(
+                    float(spawn_raw["value"][3]) if len(spawn_raw["value"]) > 3 else 0.0
+                ),
+            )
+        elif spawn_raw["type"] == "WorldPosition":
+            spawn_pos = position_factory.from_world(
+                x=float(spawn_raw["value"][0]),
+                y=float(spawn_raw["value"][1]),
+                z=float(spawn_raw["value"][2]),
+                h=float(spawn_raw["value"][3]) if len(spawn_raw["value"]) > 3 else 0.0,
+                p=float(spawn_raw["value"][4]) if len(spawn_raw["value"]) > 4 else 0.0,
+                r=float(spawn_raw["value"][5]) if len(spawn_raw["value"]) > 5 else 0.0,
+            )
+
         spawn = SpawnConfig(
-            position=Position(
-                position_type=spawn_raw["type"],
-                values=spawn_raw["value"],
-            ),
+            position=spawn_pos,
             speed=float(spawn_raw["speed"]),
         )
-
-        # cps_raw = ego.get("check_points", [])
-        # if not isinstance(cps_raw, list):
-        #     raise ValueError("ego.check_points 必須是 list")
-
-        # check_points = []
-        # for i, cp in enumerate(cps_raw):
-        #     try:
-        #         cp_obj = CheckPointConfig(
-        #             type=cp["type"],
-        #             value=tuple(cp["value"]),
-        #             tolerance=float(cp["tolerance"]),
-        #             speed=float(cp["speed"]),
-        #             speed_tolerance=tuple(cp["speed_tolerance"]),
-        #             time_limit=float(cp["time_limit"]),
-        #             time_fatal=bool(cp["time_fatal"]),
-        #         )
-        #     except KeyError as e:
-        #         raise ValueError(f"check_points[{i}] 缺少必要欄位: {e}") from None
-        #     check_points.append(cp_obj)
 
         try:
             goal_raw = ego["goal"]
         except KeyError:
             raise ValueError("ego.goal 未設定")
 
-        goal = GoalConfig(
-            position=Position(
-                position_type=goal_raw["type"],
-                values=goal_raw["value"],
-            ),
-        )
+        if goal_raw["type"] == "LanePosition":
+            goal_pos = position_factory.from_lane(
+                road_id=int(goal_raw["value"][0]),
+                lane_id=int(goal_raw["value"][1]),
+                s=float(goal_raw["value"][2]),
+                offset=(
+                    float(goal_raw["value"][3]) if len(goal_raw["value"]) > 3 else 0.0
+                ),
+            )
+        elif goal_raw["type"] == "WorldPosition":
+            goal_pos = position_factory.from_world(
+                x=float(goal_raw["value"][0]),
+                y=float(goal_raw["value"][1]),
+                z=float(goal_raw["value"][2]),
+                h=float(goal_raw["value"][3]) if len(goal_raw["value"]) > 3 else 0.0,
+                p=float(goal_raw["value"][4]) if len(goal_raw["value"]) > 4 else 0.0,
+                r=float(goal_raw["value"][5]) if len(goal_raw["value"]) > 5 else 0.0,
+            )
 
+        goal = GoalConfig(position=goal_pos)
+        position_factory.close()
         return cls(
             target_speed=target_speed,
             spawn=spawn,
@@ -193,12 +137,6 @@ class EgoConfig:
                 }
             )
 
-        # TODO: 這邊依你們的 sps.scenarios.xosc 實作實際 route 物件
-        # 例：
-        # from sps.scenarios import xosc
-        # route = xosc.Route(...)
-        # return route
-
         return lane_points  # 先回傳整理好的資料結構給你看
 
 
@@ -207,7 +145,7 @@ class ScenarioPack:
     name: str
     maps: dict[str, Path]  # map format -> path
     scenarios: dict[str, Path]
-    param_range_file: Path
+    param_range_file: Path | None
     ego: EgoConfig
 
     @classmethod
@@ -222,7 +160,10 @@ class ScenarioPack:
                 fmt: Path("scenarios").resolve() / Path(p)
                 for fmt, p in data["scenarios"].items()
             }
-            ego = EgoConfig.from_dict(data["ego"])
+            ego = EgoConfig.from_dict(
+                data["ego"],
+                xodr_path=Path("scenarios").resolve() / Path(data["maps"]["xodr"]),
+            )
 
             param_range_file = None
             if "param_range_file" in data:

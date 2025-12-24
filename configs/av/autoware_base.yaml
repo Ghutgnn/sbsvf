@@ -1,0 +1,29 @@
+autoware:
+  root: "/opt/autoware"
+  ros_setup_script: "/opt/ros/humble/setup.bash"
+
+  launch:
+    package: "autoware_launch"
+    file: "planning_simulator.launch.xml"
+    mode: "planning_simulator"
+    headless: false
+    # extra_args:
+    # - "launch_rviz:=false"
+    # - "launch_system_monitor:=false"
+    # - "launch_perception:=true"
+
+  data:
+    map_base_path: "/autoware_map"
+    default_map_subdir: "sample-map-planning"
+    data_path: "/autoware_data"
+
+  vehicle:
+    model: "sample_vehicle"
+    sensor_model: "sample_sensor_kit"
+
+  runtime:
+    service_wait_timeout_sec: 30.0
+    control_timeout_sec: 0.1
+    spin_rate_hz: 100.0
+    publish_objects: true
+    use_dynamic_objects_topic: true

@@ -9,5 +9,5 @@ scenarios/
 adapters/
 artifacts/
 docs/
-infra/
-plans/
+# infra/
+# plans/

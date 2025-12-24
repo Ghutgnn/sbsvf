@@ -1,0 +1,32 @@
+services:
+  autoware_dev:
+    image: es_auto
+    container_name: sb_dev
+    working_dir: /sbsvf
+
+    network_mode: host 
+
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+
+    environment:
+      DISPLAY: ${DISPLAY}
+      XAUTHORITY: ${XAUTHORITY}
+      NVIDIA_VISIBLE_DEVICES: all
+      NVIDIA_DRIVER_CAPABILITIES: graphics,display,compute
+      __GLX_VENDOR_LIBRARY_NAME: nvidia
+
+    volumes:
+      - /tmp/.X11-unix:/tmp/.X11-unix
+      - ${XAUTHORITY}:${XAUTHORITY}
+      - .:/sbsvf
+      - /home/hcis-s05/ysws/autoware_map:/autoware_map
+
+    tty: true
+    stdin_open: true
+    command: bash

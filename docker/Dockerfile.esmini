@@ -5,8 +5,8 @@ ARG ESMINI_REF=master   # 也可填 master 或你的分支/commit
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates git curl \
- && update-ca-certificates \
- && rm -rf /var/lib/apt/lists/*
+    && update-ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
 
 # 官方建議的 Linux 依賴（對齊你貼的那一行）
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -15,7 +15,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libtiff5-dev libgdal-dev libpoppler-dev libdcmtk-dev libgstreamer1.0-dev \
     libgtk2.0-dev libcairo2-dev libpoppler-glib-dev libxrandr-dev libxinerama-dev \
     curl cmake black \
- && rm -rf /var/lib/apt/lists/*
+    && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /opt
 # 取原始碼（可改成你的 fork）
@@ -35,21 +35,28 @@ ARG DEBIAN_FRONTEND=noninteractive
 # 執行期相依（圖形/X 相關庫 + xvfb，方便 headless）
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libgl1 libxrandr2 libxinerama1 libxi6 libxxf86vm1 libgtk2.0-0 \
-    xvfb ca-certificates \
+    xvfb ca-certificates mesa-utils\
     python3 python3-pip python3-venv \
- && python3 -m venv /venv \
- && /venv/bin/pip install -U pip \
- && rm -rf /var/lib/apt/lists/*
+    build-essential python3-dev linux-libc-dev \
+    && python3 -m venv /venv \
+    && /venv/bin/pip install -U pip \
+    && rm -rf /var/lib/apt/lists/*
+
+
+ENV NVIDIA_DRIVER_CAPABILITIES=graphics,display,compute
+ENV NVIDIA_VISIBLE_DEVICES=all
+ENV __GLX_VENDOR_LIBRARY_NAME=nvidia
 
 ENV PATH="/venv/bin:${PATH}"
 WORKDIR /workspace
 COPY . /workspace
 RUN pip install -e .
-
+RUN pip install pynput
 # 從 builder 帶入編譯好的二進位與資源
 WORKDIR /opt/esmini
 COPY --from=build /opt/esmini/bin ./bin
 COPY --from=build /opt/esmini/resources ./resources
+RUN cp -r /opt/esmini /opt/esmini2
 
 ENV PATH="/opt/esmini/bin:${PATH}"
 WORKDIR /workspace

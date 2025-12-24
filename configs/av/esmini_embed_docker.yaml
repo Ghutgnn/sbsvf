@@ -1,0 +1,6 @@
+esmini_home: /opt/esmini2/
+extra_paths:
+  - /opt/esmini2/resources/xodr/
+  - /opt/esmini2/resources/xosc/
+  - /opt/esmini2/resources/models/
+  - /opt/esmini2/resources/openx-assets/catalogs/

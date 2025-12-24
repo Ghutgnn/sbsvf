@@ -1,175 +1,292 @@
-from enum import Enum, auto
+from __future__ import annotations
+
+import ctypes as ct
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Optional
+import logging
 
 
-class PositionType(Enum):
-    LANE_POSITION = auto()
-    WORLD_POSITION = auto()
+logger = logging.getLogger("esmini.rm")
 
 
-class TPType(Enum):
-    CAR = auto()
-    PEDESTRIAN = auto()
-    BIKE = auto()
-    TRUCK = auto()
-    BUS = auto()
+# ---------- ctypes struct ----------
+class RM_PositionData(ct.Structure):
+    _fields_ = [
+        ("x", ct.c_float),
+        ("y", ct.c_float),
+        ("z", ct.c_float),
+        ("h", ct.c_float),
+        ("p", ct.c_float),
+        ("r", ct.c_float),
+        ("hRelative", ct.c_float),
+        ("roadId", ct.c_int),
+        ("junctionId", ct.c_int),
+        ("laneId", ct.c_int),
+        ("laneOffset", ct.c_float),
+        ("s", ct.c_float),
+    ]
 
-    def __str__(self):
-        return self.name.lower()
 
-
+# ---------- pure data ----------
+@dataclass(frozen=True, slots=True)
 class LanePosition:
-    def __init__(self, road_id: int, lane_id: int, s: float, offset: float):
-        self.road_id = road_id
-        self.lane_id = lane_id
-        self.s = s
-        self.offset = offset
-
-    def __eq__(self, other):
-        if not isinstance(other, LanePosition):
-            return False
-        return (
-            self.road_id == other.road_id
-            and self.lane_id == other.lane_id
-            and self.s == other.s
-            and self.offset == other.offset
-        )
+    road_id: int
+    lane_id: int
+    s: float
+    offset: float
+    junction_id: int = -1  # -1 if not in a junction
 
 
+@dataclass(frozen=True, slots=True)
 class WorldPosition:
-    def __init__(self, x: float, y: float, z: float, h: float, p: float, r: float):
-        self.x = x
-        self.y = y
-        self.z = z
-        self.h = h
-        self.p = p
-        self.r = r
-
-    def __eq__(self, other):
-        if not isinstance(other, WorldPosition):
-            return False
-        return (
-            self.x == other.x
-            and self.y == other.y
-            and self.z == other.z
-            and self.h == other.h
-            and self.p == other.p
-            and self.r == other.r
-        )
+    x: float
+    y: float
+    z: float
+    h: float
+    p: float
+    r: float
+    h_relative: float
 
 
+@dataclass(frozen=True, slots=True)
 class Position:
-    def __init__(self, position_type: str, values: list):
-        self.type = position_type
-        self.element = None
-        if position_type == "LanePosition":
-            if len(values) < 3:
-                raise ValueError(
-                    f"LanePosition requires at least 3 values: road_id, lane_id, s. Got: {values}"
-                )
-            # args: road_id, lane_id, s, offset
-            self.element = LanePosition(
-                road_id=int(values[0]),
-                lane_id=int(values[1]),
-                s=float(values[2]),
-                offset=float(values[3]) if len(values) > 3 else 0,
-            )
-        elif position_type == "WorldPosition":
-            if len(values) < 3:
-                raise ValueError(
-                    f"WorldPosition requires at least 3 values: x, y, z. Got: {values}"
-                )
-            # args: x, y, z, h, p, r
-            self.element = WorldPosition(
-                x=float(values[0]),
-                y=float(values[1]),
-                z=float(values[2]),
-                h=float(values[3]) if len(values) > 3 else 0,
-                p=float(values[4]) if len(values) > 4 else 0,
-                r=float(values[5]) if len(values) > 5 else 0,
-            )
-        else:
-            raise ValueError(
-                f"Invalid position type:{position_type}. Use 'LanePosition' or 'WorldPosition'."
-            )
+    """
+    Immutable snapshot: contains BOTH representations.
+    Factory fills everything at creation time.
+    """
 
-    def __repr__(self):
-        if self.type == "LanePosition":
-            return f"LanePosition(road_id={self.element.road_id}, lane_id={self.element.lane_id}, s={self.element.s}, offset={self.element.offset})"
-        elif self.type == "WorldPosition":
-            return f"WorldPosition(x={self.element.x}, y={self.element.y}, z={self.element.z}, h={self.element.h}, p={self.element.p}, r={self.element.r})"
-        else:
-            return f"Position(type={self.type}, element={self.element})"
+    lane: LanePosition
+    world: WorldPosition
 
-    def __str__(self):
-        if self.type == "LanePosition":
-            return f"LanePosition({self.element.road_id}, {self.element.lane_id}, {self.element.s}, {self.element.offset})"
-        elif self.type == "WorldPosition":
-            return f"WorldPosition({self.element.x}, {self.element.y}, {self.element.z}, {self.element.h}, {self.element.p}, {self.element.r})"
-        else:
-            return f"Position(type={self.type}, element={self.element})"
+    # convenience properties (optional)
+    @property
+    def road_id(self) -> int:
+        return self.lane.road_id
 
-    def __eq__(self, other):
-        if not isinstance(other, Position):
-            return False
-        return self.element == other.element
+    @property
+    def lane_id(self) -> int:
+        return self.lane.lane_id
 
-    def __hash__(self):
-        if isinstance(self.element, LanePosition):
-            return hash(
-                (
-                    self.element.road_id,
-                    self.element.lane_id,
-                    self.element.s,
-                    self.element.offset,
-                )
-            )
-        elif isinstance(self.element, WorldPosition):
-            return hash(
-                (
-                    self.element.x,
-                    self.element.y,
-                    self.element.z,
-                    self.element.h,
-                    self.element.p,
-                    self.element.r,
-                )
-            )
+    @property
+    def s(self) -> float:
+        return self.lane.s
 
-    def get_info(self):
-        if self.type == "LanePosition":
-            return (
-                self.element.road_id,
-                self.element.lane_id,
-                self.element.s,
-                self.element.offset,
-            )
-        elif self.type == "WorldPosition":
-            return (
-                self.element.x,
-                self.element.y,
-                self.element.z,
-                self.element.h,
-                self.element.p,
-                self.element.r,
-            )
+    @property
+    def offset(self) -> float:
+        return self.lane.offset
+
+    @property
+    def x(self) -> float:
+        return self.world.x
+
+    @property
+    def y(self) -> float:
+        return self.world.y
+
+    @property
+    def z(self) -> float:
+        return self.world.z
+
+    @property
+    def h(self) -> float:
+        return self.world.h
+
+    @property
+    def p(self) -> float:
+        return self.world.p
+
+    @property
+    def r(self) -> float:
+        return self.world.r
 
 
-class RelativePosition(Position):
-    def __init__(
+# ---------- factory ----------
+class PositionFactory:
+    """
+    RM is initialized once. Each Position creation uses:
+      create handle -> set lane/world -> get data -> delete handle
+    Returned Position is pure data (no handle, no factory ref).
+    """
+
+    def __init__(self, lib_path: Path, xodr_path: Path):
+        self._rm = ct.CDLL(str(lib_path))
+        self._setup_functions()
+
+        # Disable RM log file output
+        self._rm.RM_SetLogFilePath("".encode())
+
+        ret = int(self._rm.RM_Init(str(xodr_path).encode()))
+        if ret != 0:
+            raise RuntimeError(f"RM_Init failed ret={ret} xodr={xodr_path}")
+        logger.info("RM_Init OK: %s", xodr_path)
+
+        self._closed = False
+
+    def _setup_functions(self) -> None:
+        rm = self._rm
+
+        rm.RM_SetLogFilePath.argtypes = [ct.c_char_p]
+        rm.RM_SetLogFilePath.restype = None
+
+        rm.RM_Init.argtypes = [ct.c_char_p]
+        rm.RM_Init.restype = ct.c_int
+
+        rm.RM_Close.argtypes = []
+        rm.RM_Close.restype = ct.c_int
+
+        rm.RM_CreatePosition.argtypes = []
+        rm.RM_CreatePosition.restype = ct.c_int
+
+        rm.RM_DeletePosition.argtypes = [ct.c_int]
+        rm.RM_DeletePosition.restype = ct.c_int
+
+        rm.RM_SetLanePosition.argtypes = [
+            ct.c_int,
+            ct.c_int,
+            ct.c_int,
+            ct.c_float,
+            ct.c_float,
+            ct.c_bool,
+        ]
+        rm.RM_SetLanePosition.restype = ct.c_int
+
+        rm.RM_SetWorldPosition.argtypes = [
+            ct.c_int,
+            ct.c_float,
+            ct.c_float,
+            ct.c_float,
+            ct.c_float,
+            ct.c_float,
+            ct.c_float,
+        ]
+        rm.RM_SetWorldPosition.restype = ct.c_int
+
+        rm.RM_GetPositionData.argtypes = [ct.c_int, ct.POINTER(RM_PositionData)]
+        rm.RM_GetPositionData.restype = ct.c_int
+
+    def close(self) -> None:
+        if self._closed:
+            return
+        ret = int(self._rm.RM_Close())
+        self._closed = True
+        logger.info("RM_Close ret=%d", ret)
+
+    def __enter__(self) -> "PositionFactory":
+        return self
+
+    def __exit__(self, exc_type, exc, tb) -> None:
+        self.close()
+
+    def _ensure_open(self) -> None:
+        if self._closed:
+            raise RuntimeError(
+                "PositionFactory is closed. Create a new factory to generate more positions."
+            )
+
+    def _make_snapshot_from_handle(self, handle: int) -> Position:
+        out = RM_PositionData()
+        ret = int(self._rm.RM_GetPositionData(handle, ct.byref(out)))
+        if ret != 0:
+            raise RuntimeError(f"RM_GetPositionData failed ret={ret}")
+
+        lane = LanePosition(
+            road_id=int(out.roadId),
+            lane_id=int(out.laneId),
+            s=float(out.s),
+            offset=float(out.laneOffset),
+            junction_id=int(out.junctionId),
+        )
+        world = WorldPosition(
+            x=float(out.x),
+            y=float(out.y),
+            z=float(out.z),
+            h=float(out.h),
+            p=float(out.p),
+            r=float(out.r),
+            h_relative=float(out.hRelative),
+        )
+        return Position(lane=lane, world=world)
+
+    def from_lane(
         self,
-        tp_type: TPType,
-        tag: str,
-        relate_to: Position,
-        position_type: str,
-        **kwargs,
-    ):
-        super().__init__(position_type, **kwargs)
-        self.tp_type = tp_type
-        self.tag = tag
-        self.relate_to = relate_to
+        road_id: int,
+        lane_id: int,
+        s: float,
+        offset: float = 0.0,
+        align: bool = True,
+    ) -> Position:
+        self._ensure_open()
+        handle = int(self._rm.RM_CreatePosition())
+        if handle < 0:
+            raise RuntimeError("RM_CreatePosition failed")
 
-    def __repr__(self):
-        return f"RelativePosition(tp_type={self.tp_type}, tag={self.tag}, relate_to={self.relate_to.__repr__()}, position={super().__repr__()})"
+        logger.debug("Create handle=%d (from_lane)", handle)
 
-    def __str__(self):
-        return f"{self.tag}: {super().__str__()}"
+        try:
+            ret = int(
+                self._rm.RM_SetLanePosition(
+                    handle, road_id, lane_id, float(offset), float(s), bool(align)
+                )
+            )
+            logger.debug("RM_SetLanePosition(handle=%d) ret=%d", handle, ret)
+            if ret != 0:
+                raise RuntimeError(f"RM_SetLanePosition failed ret={ret}")
+
+            pos = self._make_snapshot_from_handle(handle)
+            logger.info(
+                "Position snapshot from lane: road=%d lane=%d s=%.3f offset=%.3f -> x=%.3f y=%.3f z=%.3f",
+                road_id,
+                lane_id,
+                s,
+                offset,
+                pos.x,
+                pos.y,
+                pos.z,
+            )
+            return pos
+        finally:
+            self._rm.RM_DeletePosition(handle)
+            logger.debug("RM_DeletePosition(%d)", handle)
+
+    def from_world(
+        self,
+        x: float,
+        y: float,
+        z: float,
+        h: float = 0.0,
+        p: float = 0.0,
+        r: float = 0.0,
+    ) -> Position:
+        self._ensure_open()
+        handle = int(self._rm.RM_CreatePosition())
+        if handle < 0:
+            raise RuntimeError("RM_CreatePosition failed")
+
+        logger.debug("Create handle=%d (from_world)", handle)
+
+        try:
+            ret = int(
+                self._rm.RM_SetWorldPosition(
+                    handle, float(x), float(y), float(z), float(h), float(p), float(r)
+                )
+            )
+            logger.debug("RM_SetWorldPosition(handle=%d) ret=%d", handle, ret)
+            if ret != 0:
+                raise RuntimeError(f"RM_SetWorldPosition failed ret={ret}")
+
+            pos = self._make_snapshot_from_handle(handle)
+            logger.info(
+                "Position snapshot from world: x=%.3f y=%.3f z=%.3f -> road=%d lane=%d s=%.3f offset=%.3f",
+                x,
+                y,
+                z,
+                pos.road_id,
+                pos.lane_id,
+                pos.s,
+                pos.offset,
+            )
+            return pos
+        finally:
+            self._rm.RM_DeletePosition(handle)
+            logger.debug("RM_DeletePosition(%d)", handle)

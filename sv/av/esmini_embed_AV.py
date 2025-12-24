@@ -84,12 +84,13 @@ class EsminiEmbedAV:
 
         # 其他 API 可視需要補 argtypes / restype
 
-    def init(self) -> None:
+    def init(self, sps) -> None:
         pass
 
     def reset(self, sps: ScenarioPack, params: Optional[dict] = None) -> None:
         self.stop()
-        ret = self.se.SE_Init(str(sps.maps["dummy"]).encode(), 0, 8, 0, 0)
+        self._setup_esmini_opts()
+        ret = self.se.SE_Init(str(sps.maps["dummy"]).encode(), 0, 1, 0, 0)
         if ret != 0:
             raise RuntimeError(f"esmini SE_Init failed with code {ret}")
         obj_state = SEScenarioObjectState()

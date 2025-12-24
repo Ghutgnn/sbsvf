@@ -77,8 +77,8 @@ class Runner:
             self.param_sampler = None
 
     def exec(self) -> None:
-        self.sim.init()
-        self.av.init()
+        self.sim.init(self.sps)
+        self.av.init(self.sps)
 
         if self.param_sampler is not None:
             logger.info("Starting parameter sampling execution.")
@@ -101,13 +101,17 @@ class Runner:
         self.av.stop()
         self.sim.stop()
 
+        logger.info("Runner execution completed.")
+
     def run_concrete(
         self, sps: ScenarioPack, params: Optional[dict[str, Any]] = None
     ) -> None:
         self.sim.reset(sps, params)
         self.av.reset(sps, params)
         t = 0.0
-        dt = 0.00625
+        # dt = 0.00625
+        # dt = 0.01
+        dt = -1
         ctrl_for_sim: Ctrl = Ctrl()
 
         while True:

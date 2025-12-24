@@ -87,29 +87,24 @@ class Vehicle:
         if ctrl.mode == CtrlMode.None_:
             return
         elif ctrl.mode == CtrlMode.THROTTLE_STEER:
-            logger.debug(
-                f"Applying control: pedal={ctrl.payload.get('pedal', 0)}, wheel={ctrl.payload.get('wheel', 0)}, dt={dt}"
-            )
             pedal = int(ctrl.payload.get("pedal", 0))
             wheel = int(ctrl.payload.get("wheel", 0))
             self._se.SE_SimpleVehicleControlBinary(self.sv_handle, dt, pedal, wheel)
             # Update vehicle state
             self._se.SE_SimpleVehicleGetState(self.sv_handle, ct.byref(self.vh_state))
 
-        # elif ctrl.mode == CtrlMode.VEL_STEER:
-        #     speed = ctrl.payload.get("speed", self.vh_state.speed)
-        #     h = ctrl.payload.get("h", self.vh_state.h)
-        #     logger.info(f"Applying control: speed={speed}, h={h}, dt={dt}")
-        #     # self._se.SE_SimpleVehicleControlTarget(self.sv_handle, dt, 100, 0)
-        #     # self._se.SE_SimpleVehicleControlBinary(self.sv_handle, dt, -1, -1)
-        #     self._se.SE_SimpleVehicleControlAnalog(self.sv_handle, dt, 0, h)
+        elif ctrl.mode == CtrlMode.VEL_STEER:
+            speed = ctrl.payload.get("speed", self.vh_state.speed)
+            h = ctrl.payload.get("h", self.vh_state.h)
+            self._se.SE_SimpleVehicleControlAnalog(self.sv_handle, dt, 0, h)
+            self._se.SE_SimpleVehicleSetSpeed(self.sv_handle, speed)
+            # Update vehicle state
+            self._se.SE_SimpleVehicleGetState(self.sv_handle, ct.byref(self.vh_state))
 
-        #     self._se.SE_SimpleVehicleSetSpeed(self.sv_handle, speed)
         elif ctrl.mode == CtrlMode.POSITION:
             x = ctrl.payload.get("x", self.vh_state.x)
             y = ctrl.payload.get("y", self.vh_state.y)
             h = ctrl.payload.get("h", self.vh_state.h)
-            logger.debug(f"Applying control: x={x}, y={y}, h={h}, dt={dt}")
             # Directly set position
             self.vh_state.x = x
             self.vh_state.y = y
@@ -141,7 +136,7 @@ class EsminiAdapter:
         for extra_path in self.extra_paths:
             self.se.SE_AddPath(extra_path.encode())
         self.se.SE_SetWindowPosAndSize(60, 60, 1920, 1080)
-        self.se.SE_LogToConsole(0)
+        # self.se.SE_LogToConsole(0)
 
     def _setup_function_signatures(self):
         se = self.se
@@ -155,6 +150,10 @@ class EsminiAdapter:
             ct.c_float,
         ]
         se.SE_SimpleVehicleCreate.restype = ct.c_void_p
+
+        # SE_DLL_API void SE_SimpleVehicleDelete(void *handleSimpleVehicle);
+        se.SE_SimpleVehicleDelete.argtypes = [ct.c_void_p]
+        se.SE_SimpleVehicleDelete.restype = None
 
         # SE_DLL_API void SE_SimpleVehicleGetState(void *handleSimpleVehicle, SE_SimpleVehicleState *state);
         se.SE_SimpleVehicleGetState.argtypes = [ct.c_void_p, ct.c_void_p]
@@ -232,7 +231,7 @@ class EsminiAdapter:
 
         # 其他 API 可視需要補 argtypes / restype
 
-    def init(self):
+    def init(self, sps: ScenarioPack):
         self.sim_state = SimulatorState.AV_CONNECTING
 
     def start(self, cfg: dict):
@@ -244,7 +243,7 @@ class EsminiAdapter:
         #         self.sim_state = SimulatorState.RUNNING
         #         logger.info("AV engaged.")
         #     return None
-
+        dt = dt if dt > 0 else self.se.SE_GetSimTimeStep()
         se = self.se
 
         # Update vehicle control
@@ -255,7 +254,7 @@ class EsminiAdapter:
             obj_id,
             0.0,
             self.vehicle.vh_state.x,
-            ct.c_float(self.vehicle.vh_state.y),
+            self.vehicle.vh_state.y,
             self.vehicle.vh_state.h,
         )
         se.SE_ReportObjectWheelStatus(
@@ -279,15 +278,32 @@ class EsminiAdapter:
         # obj_id = se.SE_GetId(1)
         # obj_state = self.obj_states
         obj_state = self.obj_states
-        se.SE_GetObjectState(se.SE_GetId(1), ct.byref(obj_state))
+        se.SE_GetObjectState(se.SE_GetId(0), ct.byref(obj_state))
         obs = {
-            "x": float(obj_state.x),
-            "y": float(obj_state.y),
-            "h": float(obj_state.h),
-            "speed": float(obj_state.speed),
+            "ego": {
+                "x": float(obj_state.x),
+                "y": float(obj_state.y),
+                "h": float(obj_state.h),
+                "speed": float(obj_state.speed),
+            },
+            "agents": [],
         }
+
+        for i in range(1, se.SE_GetNumberOfObjects()):
+            se.SE_GetObjectState(se.SE_GetId(i), ct.byref(obj_state))
+            obs["agents"].append(
+                {
+                    "id": int(obj_state.id),
+                    # "type": int(obj_state.objectType),
+                    "x": float(obj_state.x),
+                    "y": float(obj_state.y),
+                    "h": float(obj_state.h),
+                    "speed": float(obj_state.speed),
+                }
+            )
+
         if dt <= 0:
-            se.SE_Step()
+            se.SE_StepDT(ct.c_float(dt))
         else:
             se.SE_StepDT(ct.c_float(dt))
         return obs
@@ -296,6 +312,8 @@ class EsminiAdapter:
         self.se.SE_Close()
         if self.vehicle is not None:
             self.se.SE_SimpleVehicleDelete(self.vehicle.sv_handle)
+            self.vehicle = None
+        logger.info("Esmini simulator stopped.")
 
     def parameter_declaration_callback(self, params: dict[str, Any]) -> int:
         """
@@ -396,6 +414,7 @@ class EsminiAdapter:
             self._params_ptr,
         )
         self._setup_esmini_opts()
+        print("init esmini with scenario:", sps.scenarios["xosc"])
         ret = self.se.SE_Init(str(sps.scenarios["xosc"]).encode(), 1, 1, 0, 0)
         if ret != 0:
             raise RuntimeError(f"esmini SE_Init failed with code {ret}")

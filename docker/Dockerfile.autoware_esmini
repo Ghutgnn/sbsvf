@@ -1,0 +1,54 @@
+# ====== 0) 你要加東西的「目標環境」(Autoware) ======
+FROM ghcr.io/autowarefoundation/autoware:universe-devel-cuda AS esmini-build
+ARG DEBIAN_FRONTEND=noninteractive
+ARG ESMINI_REF=master
+
+# 1) 安裝 esmini build 需要的依賴（照你原本那份 Dockerfile 的清單）
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ca-certificates git curl \
+    build-essential gdb ninja-build pkg-config \
+    libgl1-mesa-dev libpthread-stubs0-dev libjpeg-dev libxml2-dev libpng-dev \
+    libtiff5-dev libgdal-dev libpoppler-dev libdcmtk-dev libgstreamer1.0-dev \
+    libgtk2.0-dev libcairo2-dev libpoppler-glib-dev libxrandr-dev libxinerama-dev \
+    cmake \
+    && update-ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+# 2) 取碼 + build + install
+WORKDIR /opt
+RUN git clone https://github.com/esmini/esmini.git && \
+    cd esmini && \
+    git checkout ${ESMINI_REF}
+
+WORKDIR /opt/esmini/build
+RUN cmake .. -G Ninja -DCMAKE_BUILD_TYPE=Release && \
+    cmake --build . --config Release --target install
+
+
+# ====== 1) Final：還是 Autoware base，但只把成果帶進來 ======
+FROM ghcr.io/autowarefoundation/autoware:universe-devel-cuda AS final
+ARG DEBIAN_FRONTEND=noninteractive
+
+# 3) esmini 執行期依賴（你原本 runtime 那段）
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libgl1 libxrandr2 libxinerama1 libxi6 libxxf86vm1 libgtk2.0-0 \
+    xvfb ca-certificates mesa-utils \
+    && rm -rf /var/lib/apt/lists/*
+
+# 4) 從 builder 複製 esmini 結果
+WORKDIR /opt/esmini
+COPY --from=esmini-build /opt/esmini/bin ./bin
+COPY --from=esmini-build /opt/esmini/resources ./resources
+
+# second esmini for esmini embedded controller
+RUN cp -r /opt/esmini/ /opt/esmini2/
+
+# just
+RUN curl --proto '=https' --tlsv1.2 -sSf https://just.systems/install.sh | bash -s -- --to /usr/local/bin/
+
+RUN pip install typer
+RUN pip install pynput
+
+ENV PATH="/opt/esmini/bin:${PATH}"
+WORKDIR /workspace
+CMD ["bash"]
