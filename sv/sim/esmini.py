@@ -120,7 +120,6 @@ class EsminiAdapter:
         self.sim_state = SimulatorState.INIT
         self.cfg = get_cfg(cfg_path)
         self.esmini_home = self.cfg.get("esmini_home", "/opt/esmini/")
-        self.extra_paths = self.cfg.get("extra_paths", [])
         self.obj_states = SEScenarioObjectState()
         self.log_file_path = self.cfg.get("log_file_path", "./esmini_log.txt")
         self.se = ct.CDLL(self.esmini_home + "bin/libesminiLib.so")  # Linux
@@ -133,9 +132,17 @@ class EsminiAdapter:
 
     def _setup_esmini_opts(self):
         self.se.SE_SetLogFilePath(self.log_file_path.encode())
-        for extra_path in self.extra_paths:
-            self.se.SE_AddPath(extra_path.encode())
-        self.se.SE_SetWindowPosAndSize(60, 60, 1920, 1080)
+        if "extra_paths" in self.cfg:
+            for extra_path in self.cfg["extra_paths"]:
+                self.se.SE_AddPath(extra_path.encode())
+
+        if "window" in self.cfg:
+            win_cfg = self.cfg["window"]  # ["x", "y", "width", "height"]
+            self.se.SE_SetWindowPosAndSize(
+                win_cfg[0], win_cfg[1], win_cfg[2], win_cfg[3]
+            )
+
+        # self.se.SE_SetWindowPosAndSize(60, 60, 1920, 1080)
         # self.se.SE_LogToConsole(0)
 
     def _setup_function_signatures(self):

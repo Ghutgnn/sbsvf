@@ -5,3 +5,5 @@ extra_paths:
   - /opt/esmini/resources/models/
   - /opt/esmini/resources/openx-assets/catalogs/
   - /sbsvf/scenarios/tw/maps/
+
+window: [60, 1920, 1920, 2160]
