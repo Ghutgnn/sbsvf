@@ -121,7 +121,6 @@ class EsminiAdapter:
         self.cfg = get_cfg(cfg_path)
         self.esmini_home = self.cfg.get("esmini_home", "/opt/esmini/")
         self.obj_states = SEScenarioObjectState()
-        self.log_file_path = self.cfg.get("log_file_path", "./esmini_log.txt")
         self.se = ct.CDLL(self.esmini_home + "bin/libesminiLib.so")  # Linux
         self._c_param_cb = None
         self._params_obj = None
@@ -131,7 +130,12 @@ class EsminiAdapter:
         self._setup_function_signatures()
 
     def _setup_esmini_opts(self):
-        self.se.SE_SetLogFilePath(self.log_file_path.encode())
+        if "log_file_path" in self.cfg:
+            self.se.SE_SetLogFilePath(self.cfg["log_file_path"].encode())
+        else:
+            logger.info("No log_file_path specified; using default esmini_log.txt")
+            self.se.SE_SetLogFilePath(b"./esmini_log.txt")
+
         if "extra_paths" in self.cfg:
             for extra_path in self.cfg["extra_paths"]:
                 self.se.SE_AddPath(extra_path.encode())
@@ -142,8 +146,8 @@ class EsminiAdapter:
                 win_cfg[0], win_cfg[1], win_cfg[2], win_cfg[3]
             )
 
-        # self.se.SE_SetWindowPosAndSize(60, 60, 1920, 1080)
-        # self.se.SE_LogToConsole(0)
+        if self.cfg.get("disable_stdout", True):
+            self.se.SE_SetOptionPersistent(b"disable_stdout")
 
     def _setup_function_signatures(self):
         se = self.se
@@ -235,6 +239,9 @@ class EsminiAdapter:
         se.SE_StepDT.argtypes = [ct.c_float]
 
         se.SE_GetQuitFlag.restype = ct.c_int
+
+        se.SE_SetOptionPersistent.argtypes = [ct.c_char_p]
+        se.SE_SetOptionPersistent.restype = ct.c_int
 
         # 其他 API 可視需要補 argtypes / restype
 

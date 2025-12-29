@@ -7,3 +7,5 @@ extra_paths:
   - /sbsvf/scenarios/tw/maps/
 
 window: [60, 1920, 1920, 2160]
+disable_stdout: true
+# log_file_path: ./hello.txt
