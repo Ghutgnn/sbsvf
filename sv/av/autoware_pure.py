@@ -28,6 +28,9 @@ from geometry_msgs.msg import (
     AccelWithCovarianceStamped,
 )
 
+# tier4_perception_msgs/msg/DetectedObjectsWithFeature
+from tier4_perception_msgs.msg import DetectedObjectsWithFeature
+
 from autoware_system_msgs.msg import AutowareState
 from autoware_control_msgs.msg import Control
 from autoware_adapi_v1_msgs.srv import (
@@ -46,7 +49,7 @@ from autoware_vehicle_msgs.msg import (
     SteeringReport,
     VelocityReport,
 )
-from sensor_msgs.msg import Imu
+from sensor_msgs.msg import Imu, PointCloud2, PointField
 from unique_identifier_msgs.msg import UUID
 
 try:
@@ -525,9 +528,20 @@ class AutowarePureAV:
         self._objects_pub = self._node.create_publisher(
             DetectedObjects,
             "/perception/object_recognition/detection/objects",
-            qos_profile,
+            1,
         )
 
+        # self._object_with_feature_pub = self._node.create_publisher(
+        #     DetectedObjectsWithFeature,
+        #     "/perception/object_recognition/detection/labeled_clusters",
+        #     1,
+        # )
+
+        self._dummy_pointcloud_pub = self._node.create_publisher(
+            PointCloud2,
+            "/perception/obstacle_segmentation/pointcloud",
+            qos_profile,
+        )
         self._control_mode_pub = self._node.create_publisher(
             ControlModeReport,
             "/vehicle/status/control_mode",
@@ -652,7 +666,7 @@ class AutowarePureAV:
             launch_sensing:=false \
             launch_localization:=false \
             launch_perception:=false \
-            launch_vehicle_interface:=true \
+            launch_vehicle_interface:=false \
             system_run_mode:=planning_simulation \
             launch_system_monitor:=false \
             launch_dummy_diag_publisher:=true \
@@ -725,6 +739,7 @@ class AutowarePureAV:
         self._publish_dynamic_objects()
         self._publish_occupancy_grid()
         self._publish_imu()
+        self._publish_dummy_pointcloud()
 
     def _on_control(self, msg: Control) -> None:
         self._latest_control = msg
@@ -991,6 +1006,56 @@ class AutowarePureAV:
             msg.objects.append(obj)
 
         self._objects_pub.publish(msg)
+
+    # def _publish_objects_with_feature(self) -> None:
+    #     msg = DetectedObjectsWithFeature()
+    #     msg.header.stamp = self._node.get_clock().now().to_msg()
+    #     self._object_with_feature_pub.publish(msg)
+
+    def _publish_dummy_pointcloud(self) -> None:
+        # Empty PointCloud2
+        msg = PointCloud2()
+        msg.header.stamp = self._node.get_clock().now().to_msg()
+        msg.header.frame_id = "base_link"
+        msg.height = 1
+        msg.width = 0
+        msg.is_dense = True
+        msg.is_bigendian = False
+        x = PointField()
+        x.name = "x"
+        x.offset = 0
+        x.datatype = PointField.FLOAT32
+        x.count = 1
+        y = PointField()
+        y.name = "y"
+        y.offset = 4
+        y.datatype = PointField.FLOAT32
+        y.count = 1
+        z = PointField()
+        z.name = "z"
+        z.offset = 8
+        z.datatype = PointField.FLOAT32
+        z.count = 1
+        intensity = PointField()
+        intensity.name = "intensity"
+        intensity.offset = 12
+        intensity.datatype = PointField.UINT8
+        intensity.count = 1
+        returntype = PointField()
+        returntype.name = "return_type"
+        returntype.offset = 13
+        returntype.datatype = PointField.UINT8
+        returntype.count = 1
+        channel = PointField()
+        channel.name = "channel"
+        channel.offset = 14
+        channel.datatype = PointField.UINT16
+        channel.count = 1
+        msg.fields = [x, y, z, intensity, returntype, channel]
+        msg.point_step = 16
+        msg.row_step = 0
+        msg.data = b""
+        self._dummy_pointcloud_pub.publish(msg)
 
     def _publish_initialization_state(self, state: int = None) -> None:
         msg = LocalizationInitializationState()

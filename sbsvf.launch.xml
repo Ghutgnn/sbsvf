@@ -16,10 +16,10 @@
   <arg name="launch_vehicle" default="true" description="launch vehicle"/>
   <arg name="launch_system" default="true" description="launch system"/>
   <arg name="launch_map" default="true" description="launch map"/>
-  <arg name="launch_sensing" default="true" description="launch sensing"/>
-  <arg name="launch_sensing_driver" default="true" description="launch sensing driver"/>
-  <arg name="launch_localization" default="true" description="launch localization"/>
-  <arg name="launch_perception" default="true" description="launch perception"/>
+  <arg name="launch_sensing" default="false" description="launch sensing"/>
+  <arg name="launch_sensing_driver" default="false" description="launch sensing driver"/>
+  <arg name="launch_localization" default="false" description="launch localization"/>
+  <arg name="launch_perception" default="false" description="launch perception"/>
   <arg name="launch_planning" default="true" description="launch planning"/>
   <arg name="launch_control" default="true" description="launch control"/>
   <arg name="launch_api" default="true" description="launch api"/>
@@ -27,7 +27,7 @@
   <arg name="use_sim_time" default="false" description="use_sim_time"/>
   <!-- Vehicle -->
   <arg name="vehicle_id" default="$(env VEHICLE_ID default)" description="vehicle specific ID"/>
-  <arg name="launch_vehicle_interface" default="true" description="launch vehicle interface"/>
+  <arg name="launch_vehicle_interface" default="false" description="launch vehicle interface"/>
   <!-- Control -->
   <arg name="check_external_emergency_heartbeat" default="false"/>
   <!-- Map -->
@@ -45,7 +45,7 @@
   <arg name="rviz_respawn" default="true"/>
   <!-- Perception -->
   <arg name="launch_dummy_perception" default="true" description="launch dummy perception"/>
-  <arg name="perception/enable_detection_failure" default="true" description="enable to simulate detection failure when using dummy perception"/>
+  <arg name="perception/enable_detection_failure" default="false" description="enable to simulate detection failure when using dummy perception"/>
   <arg name="perception/use_base_link_z" default="true" description="dummy perception uses base_link z axis coordinate if it is true"/>
   <arg name="sensing/visible_range" default="300.0" description="visible range when using dummy perception"/>
 
@@ -72,10 +72,10 @@
   </group>
 
   <!-- Pointcloud container -->
-  <include file="$(find-pkg-share autoware_launch)/launch/pointcloud_container.launch.py">
+  <!-- <include file="$(find-pkg-share autoware_launch)/launch/pointcloud_container.launch.py">
     <arg name="use_multithread" value="true"/>
     <arg name="container_name" value="$(var pointcloud_container_name)"/>
-  </include>
+  </include> -->
 
   <!-- Vehicle -->
   <group if="$(var launch_vehicle)">
@@ -100,24 +100,24 @@
   </group>
 
   <!-- Sensing -->
-  <group if="$(var launch_sensing)">
+  <!-- <group if="$(var launch_sensing)">
     <include file="$(find-pkg-share autoware_launch)/launch/components/tier4_sensing_component.launch.xml">
       <arg name="pointcloud_container_name" value="$(var pointcloud_container_name)"/>
     </include>
-  </group>
+  </group> -->
 
   <!-- Localization -->
-  <group if="$(var launch_localization)">
+  <!-- <group if="$(var launch_localization)">
     <include file="$(find-pkg-share autoware_launch)/launch/components/tier4_localization_component.launch.xml"/>
-  </group>
+  </group> -->
 
   <!-- Perception -->
-  <group if="$(var launch_perception)">
+  <!-- <group if="$(var launch_perception)">
     <include file="$(find-pkg-share autoware_launch)/launch/components/tier4_perception_component.launch.xml">
       <arg name="data_path" value="$(var data_path)"/>
       <arg name="pointcloud_container_name" value="$(var pointcloud_container_name)"/>
     </include>
-  </group>
+  </group> -->
 
   <!-- Planning -->
   <group if="$(var launch_planning)">
@@ -176,14 +176,14 @@
   </group>
 
   <!-- Dummy Perception -->
-  <group if="$(var launch_dummy_perception)">
+  <!-- <group if="$(var launch_dummy_perception)">
     <include file="$(find-pkg-share autoware_dummy_perception_publisher)/launch/dummy_perception_publisher.launch.xml">
       <arg name="real" value="$(var perception/enable_detection_failure)"/>
       <arg name="use_object_recognition" value="$(var perception/enable_object_recognition)"/>
       <arg name="use_base_link_z" value="$(var perception/use_base_link_z)"/>
       <arg name="visible_range" value="$(var sensing/visible_range)"/>
     </include>
-  </group>
+  </group> -->
 
 
   <!-- Launch Perception Components -->
@@ -215,24 +215,24 @@
     </group>
 
     <!-- perception evaluator -->
-    <group if="$(var use_perception_online_evaluator)">
+    <!-- <group if="$(var use_perception_online_evaluator)">
       <include file="$(find-pkg-share autoware_perception_online_evaluator)/launch/perception_online_evaluator.launch.xml"/>
-    </group>
+    </group> -->
 
     <!-- perception analytics publisher-->
-    <group if="$(var use_perception_analytics_publisher)">
+    <!-- <group if="$(var use_perception_analytics_publisher)">
       <include file="$(find-pkg-share autoware_perception_online_evaluator)/launch/perception_analytics_publisher.launch.xml"/>
-    </group>
+    </group> -->
 
     <!-- publish empty objects instead of object recognition module -->
-    <group unless="$(var perception/enable_object_recognition)">
+    <!-- <group unless="$(var perception/enable_object_recognition)">
       <push-ros-namespace namespace="object_recognition"/>
       <node pkg="autoware_dummy_perception_publisher" exec="empty_objects_publisher" name="empty_objects_publisher" output="screen">
         <remap from="~/output/objects" to="/perception/object_recognition/objects"/>
       </node>
-    </group>
+    </group> -->
 
-    <group if="$(var perception/enable_elevation_map)">
+    <!-- <group if="$(var perception/enable_elevation_map)">
       <push-ros-namespace namespace="obstacle_segmentation/elevation_map"/>
       <node pkg="autoware_elevation_map_loader" exec="elevation_map_loader" name="elevation_map_loader" output="screen">
         <remap from="output/elevation_map" to="map"/>
@@ -245,7 +245,7 @@
         <param name="elevation_map_directory" value="$(find-pkg-share autoware_elevation_map_loader)/data/elevation_maps"/>
         <param name="use_elevation_map_cloud_publisher" value="false"/>
       </node>
-    </group>
+    </group> -->
 
     <!-- traffic light module -->
     <!-- <group if="$(var perception/enable_traffic_light)">
