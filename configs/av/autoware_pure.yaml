@@ -4,7 +4,7 @@ autoware:
 
   launch:
     package: "autoware_launch"
-    file: "planning_simulator.launch.xml"
+    file: "sbsvf.launch.xml"
     # mode: "planning_simulator"
     # headless: false
     # extra_args:
