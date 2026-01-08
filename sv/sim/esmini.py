@@ -48,6 +48,7 @@ class SEScenarioObjectState(ct.Structure):
         ("objectCategory", ct.c_int),
         ("wheelAngle", ct.c_float),
         ("wheelRot", ct.c_float),
+        ("visibilityMask", ct.c_int),
     ]
 
 
@@ -152,6 +153,9 @@ class EsminiAdapter:
     def _setup_function_signatures(self):
         se = self.se
 
+        se.SE_GetObjectState.argtypes = [ct.c_int, ct.c_void_p]
+        se.SE_GetObjectState.restype = None
+
         # SE_DLL_API void *SE_SimpleVehicleCreate(float x, float y, float h, float length, float speed);
         se.SE_SimpleVehicleCreate.argtypes = [
             ct.c_float,
@@ -195,7 +199,13 @@ class EsminiAdapter:
             ct.c_float,
         ]
         se.SE_SimpleVehicleSetSpeed.argtypes = [ct.c_void_p, ct.c_float]
+
         se.SE_ReportObjectWheelStatus.argtypes = [ct.c_int, ct.c_float, ct.c_float]
+
+        # SE_DLL_API int SE_ReportObjectSpeed(int object_id, float speed);
+        se.SE_ReportObjectSpeed.argtypes = [ct.c_int, ct.c_float]
+        se.SE_ReportObjectSpeed.restype = ct.c_int
+
         se.SE_ReportObjectPosXYH.argtypes = [
             ct.c_int,
             ct.c_float,
@@ -276,6 +286,10 @@ class EsminiAdapter:
             self.vehicle.vh_state.wheel_rotation,
             self.vehicle.vh_state.wheel_angle,
         )
+        se.SE_ReportObjectSpeed(
+            obj_id,
+            self.vehicle.vh_state.speed,
+        )
         # lane_type = se.SE_GetObjectInLaneType(obj_id)
         # obs = {
         #     "x": float(self.vehicle.vh_state.x),
@@ -297,7 +311,7 @@ class EsminiAdapter:
             "ego": {
                 "x": float(obj_state.x),
                 "y": float(obj_state.y),
-                "h": float(obj_state.h),
+                "yaw": float(obj_state.h),
                 "speed": float(obj_state.speed),
             },
             "agents": [],
@@ -311,7 +325,7 @@ class EsminiAdapter:
                     # "type": int(obj_state.objectType),
                     "x": float(obj_state.x),
                     "y": float(obj_state.y),
-                    "h": float(obj_state.h),
+                    "yaw": float(obj_state.h),
                     "speed": float(obj_state.speed),
                 }
             )

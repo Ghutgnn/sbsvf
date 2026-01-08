@@ -4,3 +4,4 @@ from .esmini_embed_AV import EsminiEmbedAV
 
 # from .autoware_gpt import AutowareAV
 from .autoware import AutowareAV
+from .autoware_pure import AutowarePureAV

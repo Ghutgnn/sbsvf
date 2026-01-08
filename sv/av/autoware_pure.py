@@ -21,6 +21,7 @@ from tf2_ros import TransformBroadcaster
 from tf2_msgs.msg import TFMessage
 from nav_msgs.msg import Odometry, OccupancyGrid
 from geometry_msgs.msg import (
+    Vector3,
     Pose,
     PoseWithCovarianceStamped,
     TransformStamped,
@@ -78,8 +79,8 @@ from sv.utils.sps import ScenarioPack
 logger = logging.getLogger(__name__)
 
 
-@register_av("autoware")
-class AutowareAV:
+@register_av("autoware_pure")
+class AutowarePureAV:
     """
     Autoware AV adapter:
     - init(): 啟 Autoware (subprocess) + 建 ROS node、pub/sub、services
@@ -123,11 +124,11 @@ class AutowareAV:
         rt_cfg = self._aw_cfg.get("runtime", {})
         self._service_wait_timeout = float(rt_cfg.get("service_wait_timeout_sec", 30.0))
         self._control_timeout = float(rt_cfg.get("control_timeout_sec", 0.1))
-        self._spin_rate_hz = float(rt_cfg.get("spin_rate_hz", 100.0))
-        self._publish_objects = bool(rt_cfg.get("publish_objects", True))
-        self._use_dynamic_objects_topic = bool(
-            rt_cfg.get("use_dynamic_objects_topic", True)
-        )
+        self._spin_rate_hz = float(rt_cfg.get("spin_rate_hz", 160.0))
+        # self._publish_objects = bool(rt_cfg.get("publish_objects", True))
+        # self._use_dynamic_objects_topic = bool(
+        #     rt_cfg.get("use_dynamic_objects_topic", True)
+        # )
 
         # 初始 ScenarioPack（主要用來在 init() 時決定第一個 map）
         self._current_sps: Optional[ScenarioPack] = sps
@@ -154,20 +155,23 @@ class AutowareAV:
         self._cli_change_to_auto = None
 
         # 狀態
-        self._latest_control: Optional[Control] = None
+        self._latest_control: Control = Control()
         self._latest_control_stamp = None  # builtin_interfaces/Time or類似
         self._kinematic: VehicleKinematic = VehicleKinematic()
-        self._kinematic_state_from_aw = None
+        self._past_kinematic: VehicleKinematic = VehicleKinematic()
+        self._past_past_kinematic: VehicleKinematic = VehicleKinematic()
+        # self._kinematic_state_from_aw = None
         # self._kinematic_state_from_aw.orientation.w = (
         #     1.0  # default to a valid quaternion
         # )
+        self._imu_state = Imu()
         self._motion_state: int = MotionState.UNKNOWN
         self._ever_moving: bool = False
         self._quit_flag: bool = False
         self._last_error: Optional[str] = None
         self._vehicle_state: Optional[int] = None
         self._agents: List[Any] = []
-        AutowareAV._instance_count += 1
+        # AutowarePureAV._instance_count += 1
 
     # ------------------------------------------------------------------
     # lifecycle
@@ -178,6 +182,8 @@ class AutowareAV:
         - 啟動 Autoware launch (subprocess)
         - 等待 AD API services ready
         """
+        rclpy.init()
+
         self._ensure_ros_node()
         # 用目前的 Scenario 決定 map_path
         if self._current_sps is None:
@@ -226,12 +232,15 @@ class AutowareAV:
             self._wait_for_service(self._cli_change_to_auto, "ChangeOperationMode")
 
         # 清 internal state
-        self._latest_control = None
+        self._latest_control = Control()
         self._latest_control_stamp = None
         self._motion_state = MotionState.UNKNOWN
         self._ever_moving = False
         self._quit_flag = False
         self._last_error = None
+        self._kinematic = VehicleKinematic()
+        self._past_kinematic = VehicleKinematic()
+        self._past_past_kinematic = VehicleKinematic()
 
         ipos = sps.ego.spawn.position
         ispeed = sps.ego.spawn.speed
@@ -240,51 +249,62 @@ class AutowareAV:
         # self._publish_tf(ego_init)
         # self._publish_initialization_state(1)
 
-        input("set init position, press enter")
-        self._kinematic.time = float(
-            self._node.get_clock().now().seconds_nanoseconds()[0]
-        )
+        # input("set init position, press enter")
+        init_kinematic = VehicleKinematic()
+        init_kinematic.time = float(self._node.get_clock().now().nanoseconds) * 1e-9
+        init_kinematic.x = ipos.x
+        init_kinematic.y = ipos.y
+        init_kinematic.z = ipos.z
+        init_kinematic.yaw = ipos.h
+        init_kinematic.speed = 0.0  # Autoware state change condition
+        self._update_kinematic(init_kinematic)
 
-        self._kinematic.x = ipos.x
-        self._kinematic.y = ipos.y
+        # self._kinematic.time = float(
+        #     self._node.get_clock().now().seconds_nanoseconds()[0]
+        # )
+        # self._kinematic.x = ipos.x
+        # self._kinematic.y = ipos.y
         # self._kinematic.z = ipos.z
-        self._kinematic.yaw = ipos.h
-        # self._kinematic.p = ipos.p
-        # self._kinematic.r = ipos.r
-        # self._kinematic.speed = ispeed
-        self._kinematic.speed = 0.0
+        # self._kinematic.yaw = ipos.h
+        # # self._kinematic.p = ipos.p
+        # # self._kinematic.r = ipos.r
+        # # self._kinematic.speed = ispeed
+        # self._kinematic.speed = 0.0
 
         # self._publish_initialization_state(2)
         # self._publish_ego_state()
 
         # 1) localization
-        time.sleep(0.5)
         logger.info("Autoware state: before init loc: %s", self._vehicle_state)
         self._call_initialize_localization(sps)
-        self._publish_dynamic_objects()
+        # self._publish_dynamic_objects()
         # self._publish_initial_pose()
         # self._publish_initialization_state(3)
         while self._vehicle_state != AutowareState.WAITING_FOR_ROUTE:
             logger.info(
                 f"Waiting for autoware localization, autoware state: {self._vehicle_state}"
             )
-            command = input("press '1' to retry, '2' to skip wait: ")
-            if command.strip() == "2":
-                break
-            elif command.strip() == "1":
-                # self._call_initialize_localization(sps)
-                self._publish_initial_pose()
+            # command = input("press '1' to retry, '2' to skip wait: ")
+            # if command.strip() == "2":
+            #     break
+            # elif command.strip() == "1":
+            #     # self._call_initialize_localization(sps)
+            #     self._publish_initial_pose()
             time.sleep(0.1)
         # # 2) routing
-        input("set route points, press enter")
+        # input("set route points, press enter")
         self._call_set_route_points(sps, params)
         time.sleep(0.5)
         logger.info("Autoware state: after set route: %s", self._vehicle_state)
-        # while self._vehicle_state != AutowareState.WAITING_FOR_ENGAGE:
-        #     logger.info(
-        #         f"Waiting for autoware planning, autoware state: {self._vehicle_state}"
-        #     )
-        #     time.sleep(0.1)
+        dead_line = time.time() + 20.0
+        while (
+            self._vehicle_state != AutowareState.WAITING_FOR_ENGAGE
+            and time.time() < dead_line
+        ):
+            logger.info(
+                f"Waiting for autoware planning, autoware state: {self._vehicle_state}"
+            )
+            time.sleep(0.1)
 
         logger.info("Autoware planning ready. Changing to autonomous mode...")
         # # 3) mode -> autonomous
@@ -310,83 +330,88 @@ class AutowareAV:
         }
         """
         self._ensure_ros_node()
-        # ego = obs.get("ego", None)
-        # ego = None
-        # if ego is not None:
-        #     self._publish_ego_state(ego)
-        # else:
-        #     logger.warning("AutowareAV.step called without 'ego' state in obs")
+        ego = obs.get("ego", None)
+        if ego is not None:
+            cur_kinematic = VehicleKinematic.from_dict(ego)
+            cur_kinematic.time = float(self._node.get_clock().now().nanoseconds) * 1e-9
+            self._update_kinematic(cur_kinematic)
+            # self._publish_ego_state(ego)
 
-        if self._publish_objects and self._use_dynamic_objects_topic:
-            self.agents = obs.get("agents", [])
-            self._publish_dynamic_objects()
+        else:
+            logger.debug("AutowareAV.step called without 'ego' state in obs")
+
+        # if self._publish_objects and self._use_dynamic_objects_topic:
+        self._agents = obs.get("agents", [])
+        # self._publish_dynamic_objects()
 
         # # 等一筆「新」的 control，最多 control_timeout_sec 或 dt，取較大的以避免太頻繁 timeout
-        # wait_time = max(self._control_timeout, float(dt))
-        # deadline = time.time() + wait_time
-        # last_stamp = self._latest_control_stamp
+        wait_time = max(self._control_timeout, float(dt))
+        deadline = time.time() + wait_time
+        last_stamp = self._latest_control.stamp
 
-        # while time.time() < deadline:
-        #     if (
-        #         self._latest_control_stamp is not None
-        #         and self._latest_control_stamp != last_stamp
-        #     ):
-        #         break
-        #     time.sleep(0.001)
+        while time.time() < deadline:
+            if (
+                self._latest_control_stamp is not None
+                and self._latest_control_stamp != last_stamp
+            ):
+                break
+            time.sleep(0.001)
 
-        # ctrl_msg = self._latest_control
-        # if ctrl_msg is None:
-        #     # 尚未收到控制，先回一個只帶 AUTO mode 的 Ctrl
-        #     return Ctrl(mode=CtrlMode.None_)
+        ctrl_msg = self._latest_control
+        if ctrl_msg is None:
+            # 尚未收到控制，先回一個只帶 AUTO mode 的 Ctrl
+            return Ctrl(mode=CtrlMode.None_)
 
-        # # 轉成 Ctrl
-        # try:
-        #     speed = float(ctrl_msg.longitudinal.velocity)
-        # except AttributeError:
-        #     logger.info(
-        #         "Control message missing longitudinal.velocity; defaulting to 1.0"
-        #     )
-        #     speed = 1.0
-        # try:
-        #     steering = float(ctrl_msg.lateral.steering_tire_angle)
-        # except AttributeError:
-        #     logger.info(
-        #         "Control message missing lateral.steering_tire_angle; defaulting to 0.0"
-        #     )
-        #     steering = 0.0
-        # # logger.info(f"Received control: speed={speed}, steering={steering}")
-        # # return Ctrl(
-        # #     mode=CtrlMode.THROTTLE_STEER,
-        # #     payload={
-        # #         "pedal": 1,
-        # #         "wheel": 0,
-        # #     },
-        # # )
+        # 轉成 Ctrl
+        try:
+            speed = float(ctrl_msg.longitudinal.velocity)
+        except AttributeError:
+            logger.info(
+                "Control message missing longitudinal.velocity defaulting to 1.0"
+            )
+            speed = 1.0
+        try:
+            steering = float(ctrl_msg.lateral.steering_tire_angle)
+        except AttributeError:
+            logger.info(
+                "Control message missing lateral.steering_tire_angle defaulting to 0.0"
+            )
+            steering = 0.0
+        # logger.info(f"Received control: speed={speed}, steering={steering}")
         # return Ctrl(
-        #     mode=CtrlMode.VEL_STEER,
+        #     mode=CtrlMode.THROTTLE_STEER,
         #     payload={
-        #         "speed": speed,
-        #         "h": steering,
+        #         "pedal": 1,
+        #         "wheel": 0,
         #     },
         # )
-        if self._kinematic_state_from_aw is None:
-            logger.warning(
-                "AutowareAV.step: no kinematic state from Autoware; returning zero Ctrl"
-            )
-            return Ctrl(mode=CtrlMode.None_)
-        cur_x = self._kinematic_state_from_aw.pose.pose.pose.position.x
-        cur_y = self._kinematic_state_from_aw.pose.pose.pose.position.y
-        cur_h = self._quat_to_yaw(
-            self._kinematic_state_from_aw.pose.pose.pose.orientation
-        )
         return Ctrl(
-            mode=CtrlMode.POSITION,
+            mode=CtrlMode.VEL_STEER,
             payload={
-                "x": float(cur_x),
-                "y": float(cur_y),
-                "h": float(cur_h),
+                "speed": speed,
+                "h": steering,
             },
         )
+
+        # if self._kinematic_state_from_aw is None:
+        #     logger.warning(
+        #         "AutowareAV.step: no kinematic state from Autoware returning zero Ctrl"
+        #     )
+        #     return Ctrl(mode=CtrlMode.None_)
+
+        # cur_x = self._kinematic_state_from_aw.pose.pose.pose.position.x
+        # cur_y = self._kinematic_state_from_aw.pose.pose.pose.position.y
+        # cur_h = self._quat_to_yaw(
+        #     self._kinematic_state_from_aw.pose.pose.pose.orientation
+        # )
+        # return Ctrl(
+        #     mode=CtrlMode.POSITION,
+        #     payload={
+        #         "x": float(cur_x),
+        #         "y": float(cur_y),
+        #         "h": float(cur_h),
+        #     },
+        # )
 
     def stop(self) -> None:
         """關閉 Autoware process + ROS node / executor"""
@@ -399,10 +424,10 @@ class AutowareAV:
             self._node.destroy_node()
             self._node = None
 
-        AutowareAV._instance_count -= 1
-        if AutowareAV._instance_count <= 0 and AutowareAV._rclpy_inited:
-            rclpy.shutdown()
-            AutowareAV._rclpy_inited = False
+        # AutowareAV._instance_count -= 1
+        # if AutowareAV._instance_count <= 0 and AutowareAV._rclpy_inited:
+        #     rclpy.shutdown()
+        #     AutowareAV._rclpy_inited = False
 
         logger.info("Autoware AV stopped.")
 
@@ -433,9 +458,9 @@ class AutowareAV:
     # ROS node / spin / process
     # ------------------------------------------------------------------
     def _ensure_ros_node(self) -> None:
-        if not AutowareAV._rclpy_inited:
-            rclpy.init()
-            AutowareAV._rclpy_inited = True
+        # if not AutowareAV._rclpy_inited:
+        #     rclpy.init()
+        #     AutowareAV._rclpy_inited = True
 
         if self._node is not None:
             return
@@ -461,11 +486,11 @@ class AutowareAV:
             qos_profile,
         )
 
-        self._init_state_pub = self._node.create_publisher(
-            LocalizationInitializationState,
-            "/localization/initialization_state",
-            qos_profile,
-        )
+        # self._init_state_pub = self._node.create_publisher(
+        #     LocalizationInitializationState,
+        #     "/localization/initialization_state",
+        #     qos_profile,
+        # )
 
         self._kinematic_state_pub = self._node.create_publisher(
             Odometry,
@@ -490,7 +515,7 @@ class AutowareAV:
         #     self._objects_pub = None
         #     if self._use_dynamic_objects_topic:
         #         self._node.get_logger().warn(
-        #             "autoware_perception_msgs not available or disabled; dynamic objects not published."
+        #             "autoware_perception_msgs not available or disabled dynamic objects not published."
         #         )
 
         # self._objects_pub = self._node.create_publisher(
@@ -560,17 +585,17 @@ class AutowareAV:
             self._on_autoware_state,
             qos_profile,
         )
-        self._kinematic_state_sub = self._node.create_subscription(
-            VehicleKinematics,
-            "/api/vehicle/kinematics",
-            self._on_kinematic_state,
-            QoSProfile(
-                reliability=ReliabilityPolicy.BEST_EFFORT,  # 關鍵：允許掉包，相容 Autoware 的設定
-                durability=DurabilityPolicy.VOLATILE,
-                history=HistoryPolicy.KEEP_LAST,
-                depth=10,
-            ),
-        )
+        # self._kinematic_state_sub = self._node.create_subscription(
+        #     VehicleKinematics,
+        #     "/api/vehicle/kinematics",
+        #     self._on_kinematic_state,
+        #     QoSProfile(
+        #         reliability=ReliabilityPolicy.BEST_EFFORT,  # 關鍵：允許掉包，相容 Autoware 的設定
+        #         durability=DurabilityPolicy.VOLATILE,
+        #         history=HistoryPolicy.KEEP_LAST,
+        #         depth=10,
+        #     ),
+        # )
 
         # services
         self._cli_init_loc = self._node.create_client(
@@ -676,7 +701,7 @@ class AutowareAV:
 
         except subprocess.TimeoutExpired:
             logger.warning(
-                "Autoware did not terminate gracefully; killing process group..."
+                "Autoware did not terminate gracefully killing process group..."
             )
             os.killpg(pgid, signal.SIGKILL)
 
@@ -691,15 +716,15 @@ class AutowareAV:
     # callbacks
     # ------------------------------------------------------------------
     def _timer_callback(self):
-        # self._publish_tf(self._kinematic_state_from_aw)
-        # self._publish_control_mode()
-        # self._publish_gear_report()
-        # self._publish_steering_report()
-        # self._publish_velocity_report()
-        # self._publish_ego_state()
+        self._publish_tf()
+        self._publish_control_mode()
+        self._publish_gear_report()
+        self._publish_steering_report()
+        self._publish_velocity_report()
+        self._publish_ego_state()
         self._publish_dynamic_objects()
-        # self._publish_occupancy_grid()
-        # self._publish_imu()
+        self._publish_occupancy_grid()
+        self._publish_imu()
 
     def _on_control(self, msg: Control) -> None:
         self._latest_control = msg
@@ -870,7 +895,7 @@ class AutowareAV:
         t.transform.rotation.w = qw
 
         # 發送 TF
-        self._tf_broadcaster.sendTransform(t)
+        # self._tf_broadcaster.sendTransform(t)
 
         # ODOMETRY
         if self._kinematic_state_pub is None:
@@ -896,18 +921,19 @@ class AutowareAV:
         msg.pose.pose.orientation.w = qw
 
         msg.twist.twist.linear.x = float(ego.get("speed", 0.0))
+        # msg.twist.twist.linear.x = self._latest_control.longitudinal.velocity
 
         self._kinematic_state_pub.publish(msg)
         # logger.info(
         #     f"Published ego state: x={ego.get('x', 0.0)}, y={ego.get('y', 0.0)}, speed={ego.get('speed', 0.0)}"
         # )
+
         # ACC
         accel = AccelWithCovarianceStamped()
         accel.header.stamp = now
         accel.header.frame_id = "base_link"  # 加速度通常是相對於車身的
-        # accel.accel.accel.linear.x = float(current_state['ax'])
-        accel.accel.accel.linear.x = float(0.0)
-
+        accel.accel.accel.linear = self._imu_state.linear_acceleration
+        accel.accel.accel.angular = self._imu_state.angular_velocity
         self._accel_pub.publish(accel)
 
     def _publish_dynamic_objects(self) -> None:
@@ -950,7 +976,7 @@ class AutowareAV:
             kin.pose_with_covariance.pose.position.y = float(ag.get("y", 0.0))
             kin.pose_with_covariance.pose.position.z = float(ag.get("z", 0.0))
 
-            qz, qw = self._yaw_to_quat(float(ag.get("h", 0.0)))
+            qz, qw = self._yaw_to_quat(float(ag.get("yaw", 0.0)))
             kin.pose_with_covariance.pose.orientation.z = qz
             kin.pose_with_covariance.pose.orientation.w = qw
 
@@ -981,9 +1007,11 @@ class AutowareAV:
         logger.info("Publishing LocalizationInitializationState: INITIALIZED")
         self._init_state_pub.publish(msg)
 
-    def _publish_tf(self, odom_pose: VehicleKinematics = None) -> None:
-        if odom_pose is None:
+    def _publish_tf(self) -> None:
+        if self._kinematic is None:
+            logger.warning("No kinematic state skipping TF publish")
             return
+
         now = self._node.get_clock().now().to_msg()
 
         t = TransformStamped()
@@ -991,11 +1019,13 @@ class AutowareAV:
         t.header.frame_id = "map"
         t.child_frame_id = "base_link"
 
-        t.transform.translation.x = odom_pose.pose.pose.pose.position.x
-        t.transform.translation.y = odom_pose.pose.pose.pose.position.y
-        t.transform.translation.z = odom_pose.pose.pose.pose.position.z
+        t.transform.translation.x = self._kinematic.x
+        t.transform.translation.y = self._kinematic.y
+        t.transform.translation.z = self._kinematic.z
 
-        t.transform.rotation = odom_pose.pose.pose.pose.orientation
+        t.transform.rotation.z, t.transform.rotation.w = self._yaw_to_quat(
+            self._kinematic.yaw
+        )
 
         # 發送 TF
         self._tf_broadcaster.sendTransform(t)
@@ -1012,102 +1042,121 @@ class AutowareAV:
         msg.report = gear
         self._gear_report_pub.publish(msg)
 
-    def _publish_steering_report(self, steering_angle: float = 0.0) -> None:
+    def _publish_steering_report(self) -> None:
         msg = SteeringReport()
         msg.stamp = self._node.get_clock().now().to_msg()
-        msg.steering_tire_angle = steering_angle
+        msg.steering_tire_angle = self._latest_control.lateral.steering_tire_angle
         self._steering_report_pub.publish(msg)
 
-    def _publish_velocity_report(self, velocity: float = 0.0) -> None:
+    def _publish_velocity_report(self) -> None:
         msg = VelocityReport()
         msg.header.stamp = self._node.get_clock().now().to_msg()
         msg.header.frame_id = "base_link"
-        msg.longitudinal_velocity = velocity
+        prevx = self._past_kinematic.x if self._past_kinematic else 0.0
+        prevy = self._past_kinematic.y if self._past_kinematic else 0.0
+        prevt = self._past_kinematic.time if self._past_kinematic else 1.0
+        curx = self._kinematic.x
+        cury = self._kinematic.y
+        curt = self._kinematic.time
+        dt = curt - prevt if curt - prevt > 0.0 else 1.0
+        vx = (curx - prevx) / dt
+        vy = (cury - prevy) / dt
+        # msg.lateral_velocity = (vx**2 + vy**2) ** 0.5
+        msg.longitudinal_velocity = self._latest_control.longitudinal.velocity
+        # msg.longitudinal_velocity = (vx**2 + vy**2) ** 0.5
         self._velocity_report_pub.publish(msg)
 
-    def _publish_initial_pose(self) -> None:
-        assert self._node is not None
+    # def _publish_initial_pose(self) -> None:
+    #     assert self._node is not None
 
-        ipos = self._current_sps.ego.spawn.position
+    #     ipos = self._current_sps.ego.spawn.position
 
-        pose_msg = PoseWithCovarianceStamped()
-        pose_msg.header.stamp = self._node.get_clock().now().to_msg()
-        pose_msg.header.frame_id = "map"
+    #     pose_msg = PoseWithCovarianceStamped()
+    #     pose_msg.header.stamp = self._node.get_clock().now().to_msg()
+    #     pose_msg.header.frame_id = "map"
 
-        pose_msg.pose.pose.position.x = float(ipos.x)
-        pose_msg.pose.pose.position.y = float(ipos.y)
-        pose_msg.pose.pose.position.z = float(ipos.z)
-        logger.info(
-            f"Publishing initial pose: x={ipos.x}, y={ipos.y}, z={ipos.z}, h={ipos.h}"
-        )
-        qz, qw = self._yaw_to_quat(ipos.h)
-        pose_msg.pose.pose.orientation.z = qz
-        pose_msg.pose.pose.orientation.w = qw
+    #     pose_msg.pose.pose.position.x = float(ipos.x)
+    #     pose_msg.pose.pose.position.y = float(ipos.y)
+    #     pose_msg.pose.pose.position.z = float(ipos.z)
+    #     logger.info(
+    #         f"Publishing initial pose: x={ipos.x}, y={ipos.y}, z={ipos.z}, h={ipos.h}"
+    #     )
+    #     qz, qw = self._yaw_to_quat(ipos.h)
+    #     pose_msg.pose.pose.orientation.z = qz
+    #     pose_msg.pose.pose.orientation.w = qw
 
-        pose_msg.pose.covariance = [0.0] * 36
+    #     pose_msg.pose.covariance = [0.0] * 36
 
-        self._pub_initialpose3d.publish(pose_msg)
+    #     self._pub_initialpose3d.publish(pose_msg)
 
-    # def _publish_occupancy_grid(self) -> None:
-    #     msg = OccupancyGrid()
-    #     msg.header.stamp = self._node.get_clock().now().to_msg()
-    #     msg.header.frame_id = "map"
+    def _publish_occupancy_grid(self) -> None:
+        msg = OccupancyGrid()
+        msg.header.stamp = self._node.get_clock().now().to_msg()
+        msg.header.frame_id = "map"
 
-    #     # 這裡可以根據需要填入實際的 occupancy grid 資料
-    #     # 目前先填入空的 grid
-    #     msg.info.resolution = 0.5  # 每個格子的大小 (公尺)
-    #     msg.info.width = 200  # 格子數量 (寬)
-    #     msg.info.height = 200  # 格子數量 (高)
-    #     msg.info.origin.position.x = -50.0  # 原點位置
-    #     msg.info.origin.position.y = -50.0
-    #     msg.info.origin.position.z = 0.0
-    #     msg.info.origin.orientation.w = 1.0
+        # 這裡可以根據需要填入實際的 occupancy grid 資料
+        # 目前先填入空的 grid
+        msg.info.resolution = 0.5  # 每個格子的大小 (公尺)
+        msg.info.width = 200  # 格子數量 (寬)
+        msg.info.height = 200  # 格子數量 (高)
+        msg.info.origin.position.x = -50.0  # 原點位置
+        msg.info.origin.position.y = -50.0
+        msg.info.origin.position.z = 0.0
+        msg.info.origin.orientation.w = 1.0
 
-    #     # 填入資料 (全部未知)
-    #     msg.data = [-1] * (msg.info.width * msg.info.height)
+        # 填入資料 (全部未知)
+        msg.data = [-1] * (msg.info.width * msg.info.height)
 
-    #     self._occupancy_grid_pub.publish(msg)
+        self._occupancy_grid_pub.publish(msg)
 
     def _publish_imu(self) -> None:
-        if self._kinematic_state_from_aw is None:
-            # logger.info("No kinematic state from Autoware; skipping IMU publish")
-            return
-        msg = Imu()
-        msg.header.stamp = self._node.get_clock().now().to_msg()
-        msg.header.frame_id = "base_link"
+        # if self._kinematic_state_from_aw is None:
+        #     # logger.info("No kinematic state from Autoware skipping IMU publish")
+        #     return
+        # msg = Imu()
+        # self._imu_pub.publish(msg)
+        # return
+        # msg.header.stamp = self._node.get_clock().now().to_msg()
+        # msg.header.frame_id = "base_link"
 
-        msg.orientation.x = self._kinematic_state_from_aw.pose.pose.pose.orientation.x
-        msg.orientation.y = self._kinematic_state_from_aw.pose.pose.pose.orientation.y
-        msg.orientation.z = self._kinematic_state_from_aw.pose.pose.pose.orientation.z
-        msg.orientation.w = self._kinematic_state_from_aw.pose.pose.pose.orientation.w
+        # msg.orientation.x = self._kinematic_state_from_aw.pose.pose.pose.orientation.x
+        # msg.orientation.y = self._kinematic_state_from_aw.pose.pose.pose.orientation.y
+        # msg.orientation.z = self._kinematic_state_from_aw.pose.pose.pose.orientation.z
+        # msg.orientation.w = self._kinematic_state_from_aw.pose.pose.pose.orientation.w
 
-        msg.angular_velocity.x = (
-            self._kinematic_state_from_aw.twist.twist.twist.angular.x
-        )
-        msg.angular_velocity.y = (
-            self._kinematic_state_from_aw.twist.twist.twist.angular.y
-        )
-        msg.angular_velocity.z = (
-            self._kinematic_state_from_aw.twist.twist.twist.angular.z
-        )
+        # msg.angular_velocity.x = (
+        #     self._kinematic_state_from_aw.twist.twist.twist.angular.x
+        # )
+        # msg.angular_velocity.y = (
+        #     self._kinematic_state_from_aw.twist.twist.twist.angular.y
+        # )
+        # msg.angular_velocity.z = (
+        #     self._kinematic_state_from_aw.twist.twist.twist.angular.z
+        # )
 
-        msg.linear_acceleration.x = (
-            self._kinematic_state_from_aw.accel.accel.accel.linear.x
-        )
-        msg.linear_acceleration.y = (
-            self._kinematic_state_from_aw.accel.accel.accel.linear.y
-        )
-        msg.linear_acceleration.z = (
-            self._kinematic_state_from_aw.accel.accel.accel.linear.z
-        )
+        # msg.linear_acceleration.x = (
+        #     self._kinematic_state_from_aw.accel.accel.accel.linear.x
+        # )
+        # msg.linear_acceleration.y = (
+        #     self._kinematic_state_from_aw.accel.accel.accel.linear.y
+        # )
+        # msg.linear_acceleration.z = (
+        #     self._kinematic_state_from_aw.accel.accel.accel.linear.z
+        # )
 
-        self._imu_pub.publish(msg)
+        self._imu_pub.publish(self._imu_state)
 
     # def _publish_control_cmd
 
     # ------------------------------------------------------------------
     # helpers
     # ------------------------------------------------------------------
+    def _update_kinematic(self, kinematic: VehicleKinematic) -> None:
+        self._past_past_kinematic = self._past_kinematic
+        self._past_kinematic = self._kinematic
+        self._kinematic = kinematic
+        self._calc_imu_state()
+
     def _resolve_map_path(self, sps: ScenarioPack) -> Path:
         """
         根據 ScenarioPack / cfg 決定 map_path:
@@ -1137,6 +1186,36 @@ class AutowareAV:
         uuid_msg = UUID()
         uuid_msg.uuid = self._uuid_map[agent_id]
         return uuid_msg
+
+    def _calc_imu_state(self):
+        """根據 kinematic 計算 IMU 狀態
+        past_past_kinematic --> past_kinematic --> current_kinematic
+        """
+        dt1 = max(self._kinematic.time - self._past_kinematic.time, 1e-5)
+        dt2 = max(self._past_kinematic.time - self._past_past_kinematic.time, 1e-5)
+        dt = (dt1 + dt2) / 2.0
+
+        cur_v = Vector3()
+        cur_v.x = (self._kinematic.x - self._past_kinematic.x) / dt1
+        cur_v.y = (self._kinematic.x - self._past_kinematic.x) / dt1
+        cur_v.z = 0.0
+        prev_v = Vector3()
+        prev_v.x = (self._past_kinematic.x - self._past_past_kinematic.x) / dt2
+        prev_v.y = (self._past_kinematic.x - self._past_past_kinematic.x) / dt2
+        prev_v.z = 0.0
+        linear_acceleration = Vector3()
+        linear_acceleration.x = (cur_v.x - prev_v.x) / dt
+        linear_acceleration.y = (cur_v.y - prev_v.y) / dt
+        linear_acceleration.z = 0.0
+
+        angular_velocity = Vector3()
+        angular_velocity.x = 0.0
+        angular_velocity.y = 0.0
+        angular_velocity.z = (self._kinematic.yaw - self._past_kinematic.yaw) / dt
+        self._imu_state.linear_acceleration = linear_acceleration
+        self._imu_state.angular_velocity = angular_velocity
+        self._imu_state.header.stamp = self._node.get_clock().now().to_msg()
+        self._imu_state.header.frame_id = "base_link"
 
     @staticmethod
     def _yaw_to_quat(yaw: float) -> tuple[float, float]:
