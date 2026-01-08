@@ -14,7 +14,8 @@ source_aw := 'source /opt/autoware/setup.bash'
 
 
 exec:
-	docker exec -it {{CONTAINER_NAME}} bash
+	docker exec -it {{CONTAINER_NAME}} bash -lc "source /opt/autoware/setup.bash; exec bash"
+
 
 up:
 	docker compose up -d
@@ -24,6 +25,10 @@ down:
 
 run_aw:
 	python3 -m sv.cli run ./plans/aw_test.yaml
+
+run_pure:
+	python3 -m sv.cli run ./plans/aw_pure.yaml
+
 
 run plan:
 	python3 -m sv.cli run ./plans/{{plan}}.yaml 
@@ -35,6 +40,7 @@ test_aw:
     vehicle_model:=sample_vehicle \
     sensor_model:=sample_sensor_kit \
     launch_system_monitor:=true \
+    initial_engage_state:=false \
     
 
 sb:
@@ -110,7 +116,9 @@ clean:
 
 
 
-
+cp:
+  #!/usr/bin/env bash
+  cp sbsvf.launch.xml /opt/autoware/share/autoware_launch/launch/ 
 # {
 #     "python.analysis.extraPaths": [
 #         "./opt/autoware/local/lib/python3.10/dist-packages",
