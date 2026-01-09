@@ -255,7 +255,7 @@ class EsminiAdapter:
 
         # 其他 API 可視需要補 argtypes / restype
 
-    def init(self, sps: ScenarioPack):
+    def init(self):
         self.sim_state = SimulatorState.AV_CONNECTING
 
     def start(self, cfg: dict):

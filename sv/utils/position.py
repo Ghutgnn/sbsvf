@@ -100,6 +100,21 @@ class Position:
     def r(self) -> float:
         return self.world.r
 
+    # dict representation
+    def to_dict(self) -> dict:
+        return {
+            "road_id": self.road_id,
+            "lane_id": self.lane_id,
+            "s": self.s,
+            "offset": self.offset,
+            "x": self.x,
+            "y": self.y,
+            "z": self.z,
+            "h": self.h,
+            "p": self.p,
+            "r": self.r,
+        }
+
 
 # ---------- factory ----------
 class PositionFactory:

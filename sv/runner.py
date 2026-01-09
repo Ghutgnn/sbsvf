@@ -77,8 +77,8 @@ class Runner:
             self.param_sampler = None
 
     def exec(self) -> None:
-        self.sim.init(self.sps)
-        self.av.init(self.sps)
+        self.sim.init()
+        self.av.init()
 
         if self.param_sampler is not None:
             logger.info("Starting parameter sampling execution.")
