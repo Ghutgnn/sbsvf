@@ -18,54 +18,14 @@ from rclpy.executors import MultiThreadedExecutor
 from rclpy.qos import QoSProfile, ReliabilityPolicy, DurabilityPolicy, HistoryPolicy
 from tf2_ros import TransformBroadcaster
 
-from tf2_msgs.msg import TFMessage
-from nav_msgs.msg import Odometry, OccupancyGrid
-from geometry_msgs.msg import (
-    Vector3,
-    Pose,
-    PoseWithCovarianceStamped,
-    TransformStamped,
-    AccelWithCovarianceStamped,
-)
-
-# tier4_perception_msgs/msg/DetectedObjectsWithFeature
-from tier4_perception_msgs.msg import DetectedObjectsWithFeature
-
-from autoware_system_msgs.msg import AutowareState
-from autoware_control_msgs.msg import Control
-from autoware_adapi_v1_msgs.srv import (
-    InitializeLocalization,
-    SetRoutePoints,
-    ChangeOperationMode,
-)
-from autoware_adapi_v1_msgs.msg import (
-    MotionState,
-    LocalizationInitializationState,
-    VehicleKinematics,
-)
-from autoware_vehicle_msgs.msg import (
-    GearCommand,
-    ControlModeReport,
-    GearReport,
-    SteeringReport,
-    VelocityReport,
-)
-from sensor_msgs.msg import Imu, PointCloud2, PointField
-from unique_identifier_msgs.msg import UUID
-
-from autoware_perception_msgs.msg import (
-    PredictedObjects,
-    PredictedObject,
-    PredictedObjectKinematics,
-    Shape,
-    ObjectClassification,
-    TrackedObject,
-    TrackedObjects,
-    TrackedObjectKinematics,
-    DetectedObjects,
-    DetectedObject,
-    DetectedObjectKinematics,
-)
+import nav_msgs.msg as nav_msgs
+import geometry_msgs.msg as geometry_msgs
+import autoware_system_msgs.msg as autoware_system_msgs
+import autoware_control_msgs.msg as autoware_control_msgs
+import autoware_adapi_v1_msgs.srv as autoware_adapi_v1_msgs_srv
+import autoware_vehicle_msgs.msg as autoware_vehicle_msgs
+import sensor_msgs.msg as sensor_msgs
+import autoware_perception_msgs.msg as autoware_perception_msgs
 
 
 from sv.utils.position import Position
@@ -153,12 +113,14 @@ class AutowarePureAV:
         # 狀態
         self._vehicle_state: Optional[int] = None
         self._current_gear: Optional[int] = None
-        self._latest_control: Control = Control()
+        self._latest_control: autoware_control_msgs.Control = (
+            autoware_control_msgs.Control()
+        )
         self._latest_control_stamp = None
         self._kinematic: VehicleKinematic = VehicleKinematic()
         self._prev_kinematic: VehicleKinematic = VehicleKinematic()
         self._prev_prev_kinematic: VehicleKinematic = VehicleKinematic()
-        self._imu_state = Imu()
+        self._imu_state = sensor_msgs.Imu()
         # self._motion_state: int = MotionState.UNKNOWN
         self._quit_flag: bool = False
         self._last_error: Optional[str] = None
@@ -226,13 +188,13 @@ class AutowarePureAV:
             self._wait_for_service(self._client_change_to_auto, "ChangeOperationMode")
 
         # 清 internal state
-        self._latest_control = Control()
+        self._latest_control = autoware_control_msgs.Control()
         self._latest_control_stamp = None
         # self._motion_state = MotionState.UNKNOWN
         self._current_gear = None
         self._quit_flag = False
         self._last_error = None
-        # self._imu_state = Imu()
+        # self._imu_state = sensor_msgs.Imu()
 
         self._kinematic = VehicleKinematic()
         self._prev_kinematic = VehicleKinematic()
@@ -266,14 +228,14 @@ class AutowarePureAV:
         # Wait for localization to be ready
         start = time.time()
         while (
-            self._vehicle_state != AutowareState.WAITING_FOR_ROUTE
+            self._vehicle_state != autoware_system_msgs.AutowareState.WAITING_FOR_ROUTE
             and time.time() - start < self._timeout_sec
         ):
             logger.info(f"Waiting for autoware localization...")
             time.sleep(0.1)
 
         # Check if localization is ready
-        if self._vehicle_state != AutowareState.WAITING_FOR_ROUTE:
+        if self._vehicle_state != autoware_system_msgs.AutowareState.WAITING_FOR_ROUTE:
             logger.error("Autoware localization initialization timed out.")
             self._quit_flag = True
             self._last_error = "Autoware localization initialization timed out."
@@ -295,14 +257,14 @@ class AutowarePureAV:
         # Wait for route to be set
         start = time.time()
         while (
-            self._vehicle_state != AutowareState.WAITING_FOR_ENGAGE
+            self._vehicle_state != autoware_system_msgs.AutowareState.WAITING_FOR_ENGAGE
             and time.time() - start < self._timeout_sec
         ):
             logger.info(f"Waiting for autoware planning... ")
             time.sleep(0.1)
 
         # Check if route is set
-        if self._vehicle_state != AutowareState.WAITING_FOR_ENGAGE:
+        if self._vehicle_state != autoware_system_msgs.AutowareState.WAITING_FOR_ENGAGE:
             logger.error("Autoware planning timed out.")
             self._quit_flag = True
             self._last_error = "Autoware planning timed out."
@@ -325,17 +287,16 @@ class AutowarePureAV:
         self._ensure_ros_node()
 
         if (
-            self._vehicle_state != AutowareState.WAITING_FOR_ENGAGE
-            and self._vehicle_state != AutowareState.DRIVING
+            self._vehicle_state != autoware_system_msgs.AutowareState.WAITING_FOR_ENGAGE
+            and self._vehicle_state != autoware_system_msgs.AutowareState.DRIVING
         ):
             logger.warning(
                 f"Autoware not in driving mode, current state: {self._vehicle_state}"
             )
             return Ctrl(mode=CtrlMode.None_)
 
-        if self._vehicle_state == AutowareState.WAITING_FOR_ENGAGE:
+        if self._vehicle_state == autoware_system_msgs.AutowareState.WAITING_FOR_ENGAGE:
             logger.info("Changing Autoware to autonomous mode...")
-            input("change to autonomous mode, press enter")
 
             try:
                 self._call_change_to_autonomous()
@@ -349,14 +310,14 @@ class AutowarePureAV:
             # Wait for change to autonomous
             start = time.time()
             while (
-                self._vehicle_state != AutowareState.DRIVING
+                self._vehicle_state != autoware_system_msgs.AutowareState.DRIVING
                 and time.time() - start < self._timeout_sec
             ):
                 logger.info(f"Waiting for autoware to enter autonomous mode... ")
                 time.sleep(0.1)
 
             # Check if changed to autonomous
-            if self._vehicle_state != AutowareState.DRIVING:
+            if self._vehicle_state != autoware_system_msgs.AutowareState.DRIVING:
                 logger.error("Autoware change to autonomous mode timed out.")
                 self._quit_flag = True
                 self._last_error = "Autoware change to autonomous mode timed out."
@@ -466,7 +427,7 @@ class AutowarePureAV:
 
         # publishers
         # self._pub_initialpose3d = self._node.create_publisher(
-        #     PoseWithCovarianceStamped,
+        #     geometry_msgs.PoseWithCovarianceStamped,
         #     "/initialpose3d",
         #     qos_profile,
         # )
@@ -478,60 +439,60 @@ class AutowarePureAV:
         # )
 
         self._kinematic_state_pub = self._node.create_publisher(
-            Odometry,
+            nav_msgs.Odometry,
             "/localization/kinematic_state",
             qos_profile,
         )
 
         self._accel_pub = self._node.create_publisher(
-            AccelWithCovarianceStamped,
+            geometry_msgs.AccelWithCovarianceStamped,
             "/localization/acceleration",
             qos_profile,
         )
 
         self._objects_pub = self._node.create_publisher(
-            DetectedObjects,
+            autoware_perception_msgs.DetectedObjects,
             "/perception/object_recognition/detection/objects",
             1,
         )
 
         self._dummy_pointcloud_pub = self._node.create_publisher(
-            PointCloud2,
+            sensor_msgs.PointCloud2,
             "/perception/obstacle_segmentation/pointcloud",
             qos_profile,
         )
         self._control_mode_pub = self._node.create_publisher(
-            ControlModeReport,
+            autoware_vehicle_msgs.ControlModeReport,
             "/vehicle/status/control_mode",
             qos_profile,
         )
 
         self._gear_report_pub = self._node.create_publisher(
-            GearReport,
+            autoware_vehicle_msgs.GearReport,
             "/vehicle/status/gear_status",
             qos_profile,
         )
 
         self._steering_report_pub = self._node.create_publisher(
-            SteeringReport,
+            autoware_vehicle_msgs.SteeringReport,
             "/vehicle/status/steering_status",
             qos_profile,
         )
 
         self._velocity_report_pub = self._node.create_publisher(
-            VelocityReport,
+            autoware_vehicle_msgs.VelocityReport,
             "/vehicle/status/velocity_status",
             qos_profile,
         )
 
         self._occupancy_grid_pub = self._node.create_publisher(
-            OccupancyGrid,
+            nav_msgs.OccupancyGrid,
             "/perception/occupancy_grid_map/map",
             qos_profile,
         )
 
         # self._imu_pub = self._node.create_publisher(
-        #     Imu,
+        #     sensor_msgs.Imu,
         #     "/sensing/imu/imu_data",
         #     qos_profile,
         # )
@@ -540,21 +501,21 @@ class AutowarePureAV:
 
         # subscribers
         self._control_sub = self._node.create_subscription(
-            Control,
+            autoware_control_msgs.Control,
             "/control/command/control_cmd",
             self._on_control,
             qos_profile,
         )
 
         self._autoware_state_sub = self._node.create_subscription(
-            AutowareState,
+            autoware_system_msgs.AutowareState,
             "/autoware/state",
             self._on_autoware_state,
             qos_profile,
         )
 
         self._gear_cmd_sub = self._node.create_subscription(
-            GearCommand,
+            autoware_vehicle_msgs.GearCommand,
             "/control/command/gear_cmd",
             self._on_gear_command,
             qos_profile,
@@ -562,15 +523,15 @@ class AutowarePureAV:
 
         # services
         self._client_initial_localization = self._node.create_client(
-            InitializeLocalization,
+            autoware_adapi_v1_msgs_srv.InitializeLocalization,
             "/api/localization/initialize",
         )
         self._client_set_route_points = self._node.create_client(
-            SetRoutePoints,
+            autoware_adapi_v1_msgs_srv.SetRoutePoints,
             "/api/routing/set_route_points",
         )
         self._client_change_to_auto = self._node.create_client(
-            ChangeOperationMode,
+            autoware_adapi_v1_msgs_srv.ChangeOperationMode,
             "/api/operation_mode/change_to_autonomous",
         )
 
@@ -674,14 +635,14 @@ class AutowarePureAV:
         # self._publish_imu()
         self._publish_dummy_pointcloud()
 
-    def _on_control(self, msg: Control) -> None:
+    def _on_control(self, msg: autoware_control_msgs.Control) -> None:
         self._latest_control = msg
         self._latest_control_stamp = msg.stamp
 
-    def _on_autoware_state(self, msg: AutowareState) -> None:
+    def _on_autoware_state(self, msg: autoware_system_msgs.AutowareState) -> None:
         self._vehicle_state = msg.state
 
-    def _on_gear_command(self, msg: GearCommand) -> None:
+    def _on_gear_command(self, msg: autoware_vehicle_msgs.GearCommand) -> None:
         self._current_gear = msg.command
 
     # ------------------------------------------------------------------
@@ -708,7 +669,7 @@ class AutowarePureAV:
         ipos = sps.ego.spawn.position
         ispeed = sps.ego.spawn.speed
 
-        t = TransformStamped()
+        t = geometry_msgs.TransformStamped()
         t.header.stamp = now
         t.header.frame_id = "map"
         t.child_frame_id = "base_link"
@@ -725,8 +686,8 @@ class AutowarePureAV:
         # Send TF
         self._tf_broadcaster.sendTransform(t)
 
-        req = InitializeLocalization.Request()
-        pose_msg = PoseWithCovarianceStamped()
+        req = autoware_adapi_v1_msgs_srv.InitializeLocalization.Request()
+        pose_msg = geometry_msgs.PoseWithCovarianceStamped()
         pose_msg.header.stamp = self._node.get_clock().now().to_msg()
         pose_msg.header.frame_id = "map"
 
@@ -763,12 +724,12 @@ class AutowarePureAV:
     def _call_set_route_points(self, sps: ScenarioPack, params: Dict[str, Any]) -> None:
         assert self._node is not None
 
-        req = SetRoutePoints.Request()
+        req = autoware_adapi_v1_msgs_srv.SetRoutePoints.Request()
         req.header.frame_id = "map"
         req.header.stamp = self._node.get_clock().now().to_msg()
 
         gp = sps.ego.goal.position
-        goal = Pose()
+        goal = geometry_msgs.Pose()
         goal.position.x = float(gp.x)
         goal.position.y = float(gp.y)
         goal.position.z = float(gp.z)
@@ -799,7 +760,7 @@ class AutowarePureAV:
     def _call_change_to_autonomous(self) -> None:
         assert self._node is not None
 
-        req = ChangeOperationMode.Request()
+        req = autoware_adapi_v1_msgs_srv.ChangeOperationMode.Request()
         fut = self._client_change_to_auto.call_async(req)
         # rclpy.spin_until_future_complete(self._node, fut)
         start = time.time()
@@ -822,7 +783,7 @@ class AutowarePureAV:
         ego = self._kinematic
 
         # ODOMETRY
-        msg = Odometry()
+        msg = nav_msgs.Odometry()
         msg.header.stamp = now
         msg.header.frame_id = "map"
         msg.child_frame_id = "base_link"
@@ -842,7 +803,7 @@ class AutowarePureAV:
         self._kinematic_state_pub.publish(msg)
 
         # ACC
-        accel = AccelWithCovarianceStamped()
+        accel = geometry_msgs.AccelWithCovarianceStamped()
         accel.header.stamp = now
         accel.header.frame_id = "base_link"
         accel.accel.accel.linear = self._imu_state.linear_acceleration
@@ -850,34 +811,34 @@ class AutowarePureAV:
         self._accel_pub.publish(accel)
 
     def _publish_dynamic_objects(self) -> None:
-        msg = DetectedObjects()
+        msg = autoware_perception_msgs.DetectedObjects()
         msg.header.stamp = self._node.get_clock().now().to_msg()
         msg.header.frame_id = "map"
 
         for ag in self._agents:
-            obj = DetectedObject()
+            obj = autoware_perception_msgs.DetectedObject()
 
             # 1. existence_probability
             obj.existence_probability = 1.0
 
             # 2. Classification
-            clas = ObjectClassification()
+            clas = autoware_perception_msgs.ObjectClassification()
             # TODO: 根據 agent type 設定不同 label
-            clas.label = ObjectClassification.CAR
+            clas.label = autoware_perception_msgs.ObjectClassification.CAR
             clas.probability = 1.0
             obj.classification = [clas]
 
             # 3. Shape
-            shp = Shape()
+            shp = autoware_perception_msgs.Shape()
             # TODO: 根據 agent type 設定不同 shape
-            shp.type = Shape.BOUNDING_BOX
+            shp.type = autoware_perception_msgs.Shape.BOUNDING_BOX
             shp.dimensions.x = float(ag.get("length", 4.0))
             shp.dimensions.y = float(ag.get("width", 2.0))
             shp.dimensions.z = float(ag.get("height", 1.6))
             obj.shape = shp
 
             # 4. Kinematics
-            kin = DetectedObjectKinematics()
+            kin = autoware_perception_msgs.DetectedObjectKinematics()
 
             kin.orientation_availability = (
                 2  # (0:UNAVAILABLE, 1:SIGN_UNKNOWN, 2:AVAILABLE)
@@ -910,42 +871,42 @@ class AutowarePureAV:
 
     def _publish_dummy_pointcloud(self) -> None:
         # Empty PointCloud2
-        msg = PointCloud2()
+        msg = sensor_msgs.PointCloud2()
         msg.header.stamp = self._node.get_clock().now().to_msg()
         msg.header.frame_id = "base_link"
         msg.height = 1
         msg.width = 0
         msg.is_dense = True
         msg.is_bigendian = False
-        x = PointField()
+        x = sensor_msgs.PointField()
         x.name = "x"
         x.offset = 0
-        x.datatype = PointField.FLOAT32
+        x.datatype = sensor_msgs.PointField.FLOAT32
         x.count = 1
-        y = PointField()
+        y = sensor_msgs.PointField()
         y.name = "y"
         y.offset = 4
-        y.datatype = PointField.FLOAT32
+        y.datatype = sensor_msgs.PointField.FLOAT32
         y.count = 1
-        z = PointField()
+        z = sensor_msgs.PointField()
         z.name = "z"
         z.offset = 8
-        z.datatype = PointField.FLOAT32
+        z.datatype = sensor_msgs.PointField.FLOAT32
         z.count = 1
-        intensity = PointField()
+        intensity = sensor_msgs.PointField()
         intensity.name = "intensity"
         intensity.offset = 12
-        intensity.datatype = PointField.UINT8
+        intensity.datatype = sensor_msgs.PointField.UINT8
         intensity.count = 1
-        returntype = PointField()
+        returntype = sensor_msgs.PointField()
         returntype.name = "return_type"
         returntype.offset = 13
-        returntype.datatype = PointField.UINT8
+        returntype.datatype = sensor_msgs.PointField.UINT8
         returntype.count = 1
-        channel = PointField()
+        channel = sensor_msgs.PointField()
         channel.name = "channel"
         channel.offset = 14
-        channel.datatype = PointField.UINT16
+        channel.datatype = sensor_msgs.PointField.UINT16
         channel.count = 1
         msg.fields = [x, y, z, intensity, returntype, channel]
         msg.point_step = 16
@@ -975,7 +936,7 @@ class AutowarePureAV:
 
         now = self._node.get_clock().now().to_msg()
 
-        t = TransformStamped()
+        t = geometry_msgs.TransformStamped()
         t.header.stamp = now
         t.header.frame_id = "map"
         t.child_frame_id = "base_link"
@@ -991,29 +952,31 @@ class AutowarePureAV:
         # 發送 TF
         self._tf_broadcaster.sendTransform(t)
 
-    def _publish_control_mode(self, mode: int = ControlModeReport.AUTONOMOUS) -> None:
-        msg = ControlModeReport()
+    def _publish_control_mode(
+        self, mode: int = autoware_vehicle_msgs.ControlModeReport.AUTONOMOUS
+    ) -> None:
+        msg = autoware_vehicle_msgs.ControlModeReport()
         msg.stamp = self._node.get_clock().now().to_msg()
         msg.mode = mode
         self._control_mode_pub.publish(msg)
 
     def _publish_gear_report(self) -> None:
-        msg = GearReport()
+        msg = autoware_vehicle_msgs.GearReport()
         msg.stamp = self._node.get_clock().now().to_msg()
         if self._current_gear is None:
             logger.warning("No gear command received, defaulting to DRIVE")
-            self._current_gear = GearCommand.DRIVE
+            self._current_gear = autoware_vehicle_msgs.GearCommand.DRIVE
         msg.report = self._current_gear
         self._gear_report_pub.publish(msg)
 
     def _publish_steering_report(self) -> None:
-        msg = SteeringReport()
+        msg = autoware_vehicle_msgs.SteeringReport()
         msg.stamp = self._node.get_clock().now().to_msg()
         msg.steering_tire_angle = self._latest_control.lateral.steering_tire_angle
         self._steering_report_pub.publish(msg)
 
     def _publish_velocity_report(self) -> None:
-        msg = VelocityReport()
+        msg = autoware_vehicle_msgs.VelocityReport()
         msg.header.stamp = self._node.get_clock().now().to_msg()
         msg.header.frame_id = "base_link"
         msg.longitudinal_velocity = self._latest_control.longitudinal.velocity
@@ -1024,7 +987,7 @@ class AutowarePureAV:
         self._velocity_report_pub.publish(msg)
 
     def _publish_occupancy_grid(self) -> None:
-        msg = OccupancyGrid()
+        msg = nav_msgs.OccupancyGrid()
         msg.header.stamp = self._node.get_clock().now().to_msg()
         msg.header.frame_id = "map"
 
@@ -1104,7 +1067,7 @@ class AutowarePureAV:
         cos_yaw = math.cos(current_yaw)
         sin_yaw = math.sin(current_yaw)
 
-        linear_acceleration = Vector3()
+        linear_acceleration = geometry_msgs.Vector3()
         linear_acceleration.x = acc_x_global * cos_yaw + acc_y_global * sin_yaw
         linear_acceleration.y = -acc_x_global * sin_yaw + acc_y_global * cos_yaw
         linear_acceleration.z = 0.0  # 2D 平面假設，忽略重力
@@ -1118,7 +1081,7 @@ class AutowarePureAV:
         while diff_yaw < -math.pi:
             diff_yaw += 2.0 * math.pi
 
-        angular_velocity = Vector3()
+        angular_velocity = geometry_msgs.Vector3()
         angular_velocity.x = 0.0
         angular_velocity.y = 0.0
         # 這裡建議使用 dt1 (當前區間) 比較能代表當下瞬間角速度
