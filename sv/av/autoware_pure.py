@@ -141,7 +141,7 @@ class AutowarePureAV:
         self._steering_report_pub = None
         self._velocity_report_pub = None
         self._occupancy_grid_pub = None
-        self._imu_pub = None
+        # self._imu_pub = None
         self._tf_broadcaster = None
         self._control_sub = None
         self._gear_cmd_sub = None
@@ -188,6 +188,12 @@ class AutowarePureAV:
         self._wait_for_service(self._client_set_route_points, "SetRoutePoints")
         self._wait_for_service(self._client_change_to_auto, "ChangeOperationMode")
 
+        if self._quit_flag:
+            self.stop()
+            raise RuntimeError(
+                f"AutowarePureAV init failed: {self._last_error or 'unknown error'}"
+            )
+
         logger.info("Autoware AV initialized and Autoware stack is ready.")
 
     def reset(self, sps: ScenarioPack, params: Optional[dict] = None) -> None:
@@ -196,7 +202,7 @@ class AutowarePureAV:
 
         做兩件事：
         1. 如有換 map，就重啟 Autoware
-        2. 用 AD API 設 initial pose / route / autonomous
+        2. 用 AD API 設 initial pose / route
         """
         params = params or {}
         self._ensure_ros_node()
@@ -226,7 +232,7 @@ class AutowarePureAV:
         self._current_gear = None
         self._quit_flag = False
         self._last_error = None
-        self._imu_state = Imu()
+        # self._imu_state = Imu()
 
         self._kinematic = VehicleKinematic()
         self._prev_kinematic = VehicleKinematic()
@@ -250,8 +256,14 @@ class AutowarePureAV:
 
         # 1) localization
         logger.info(f"Initializing Autoware... (Current state: {self._vehicle_state})")
-        self._call_initialize_localization(sps)
+        try:
+            self._call_initialize_localization(sps)
+        except RuntimeError as e:
+            self._quit_flag = True
+            self._last_error = str(e)
+            raise RuntimeError("Failed to initialize Autoware localization.") from e
 
+        # Wait for localization to be ready
         start = time.time()
         while (
             self._vehicle_state != AutowareState.WAITING_FOR_ROUTE
@@ -260,17 +272,27 @@ class AutowarePureAV:
             logger.info(f"Waiting for autoware localization...")
             time.sleep(0.1)
 
+        # Check if localization is ready
         if self._vehicle_state != AutowareState.WAITING_FOR_ROUTE:
             logger.error("Autoware localization initialization timed out.")
+            self._quit_flag = True
+            self._last_error = "Autoware localization initialization timed out."
             raise RuntimeError("Autoware localization initialization timed out.")
-        else:
-            logger.info("Autoware localization initialized.")
+
+        logger.info("Autoware localization initialized.")
 
         # 2) routing
         logger.info(
             f"Setting Autoware route points... (Current state: {self._vehicle_state})"
         )
-        self._call_set_route_points(sps, self._autoware_cfg.get("runtime", {}))
+        try:
+            self._call_set_route_points(sps, self._autoware_cfg.get("runtime", {}))
+        except RuntimeError as e:
+            self._quit_flag = True
+            self._last_error = str(e)
+            raise RuntimeError("Failed to set Autoware route points.") from e
+
+        # Wait for route to be set
         start = time.time()
         while (
             self._vehicle_state != AutowareState.WAITING_FOR_ENGAGE
@@ -279,13 +301,14 @@ class AutowarePureAV:
             logger.info(f"Waiting for autoware planning... ")
             time.sleep(0.1)
 
+        # Check if route is set
         if self._vehicle_state != AutowareState.WAITING_FOR_ENGAGE:
-            logger.error("Autoware route setting timed out.")
-            raise RuntimeError("Autoware route setting timed out.")
-        else:
-            logger.info("Autoware planning ready. Ready to engage.")
+            logger.error("Autoware planning timed out.")
+            self._quit_flag = True
+            self._last_error = "Autoware planning timed out."
+            raise RuntimeError("Autoware planning timed out.")
 
-        logger.info("Autoware AV reset completed.")
+        logger.info("Autoware reset ready. Ready to engage.")
 
     def step(self, obs: Dict[str, Any], dt: float) -> Ctrl:
         """
@@ -313,10 +336,32 @@ class AutowarePureAV:
         if self._vehicle_state == AutowareState.WAITING_FOR_ENGAGE:
             logger.info("Changing Autoware to autonomous mode...")
             input("change to autonomous mode, press enter")
-            self._call_change_to_autonomous()
-            while self._vehicle_state != AutowareState.DRIVING:
+
+            try:
+                self._call_change_to_autonomous()
+            except RuntimeError as e:
+                self._quit_flag = True
+                self._last_error = str(e)
+                raise RuntimeError(
+                    "Failed to change Autoware to autonomous mode."
+                ) from e
+
+            # Wait for change to autonomous
+            start = time.time()
+            while (
+                self._vehicle_state != AutowareState.DRIVING
+                and time.time() - start < self._timeout_sec
+            ):
                 logger.info(f"Waiting for autoware to enter autonomous mode... ")
                 time.sleep(0.1)
+
+            # Check if changed to autonomous
+            if self._vehicle_state != AutowareState.DRIVING:
+                logger.error("Autoware change to autonomous mode timed out.")
+                self._quit_flag = True
+                self._last_error = "Autoware change to autonomous mode timed out."
+                return
+
             logger.info("Autoware is running...")
 
         ego = obs.get("ego", None)
@@ -329,7 +374,7 @@ class AutowarePureAV:
 
         self._agents = obs.get("agents", [])
 
-        # 等一筆「新」的 control，最多 control_timeout_sec 或 dt，取較大的以避免太頻繁 timeout
+        # wait for new control message
         wait_time = max(self._control_timeout_sec, float(dt))
         deadline = time.time() + wait_time
         last_stamp = self._latest_control.stamp
@@ -348,20 +393,8 @@ class AutowarePureAV:
             )
             return Ctrl(mode=CtrlMode.None_)
 
-        try:
-            speed = float(self._latest_control.longitudinal.velocity)
-        except AttributeError:
-            logger.warning(
-                "Control message missing longitudinal.velocity defaulting to 1.0"
-            )
-            speed = 1.0
-        try:
-            steering = float(self._latest_control.lateral.steering_tire_angle)
-        except AttributeError:
-            logger.warning(
-                "Control message missing lateral.steering_tire_angle defaulting to 0.0"
-            )
-            steering = 0.0
+        speed = float(self._latest_control.longitudinal.velocity)
+        steering = float(self._latest_control.lateral.steering_tire_angle)
 
         return Ctrl(
             mode=CtrlMode.VEL_STEER,
@@ -382,7 +415,7 @@ class AutowarePureAV:
             self._node.destroy_node()
             self._node = None
 
-        rclpy.shutdown()
+        rclpy.try_shutdown()
 
         logger.info("Autoware AV stopped.")
 
@@ -497,11 +530,11 @@ class AutowarePureAV:
             qos_profile,
         )
 
-        self._imu_pub = self._node.create_publisher(
-            Imu,
-            "/sensing/imu/imu_data",
-            qos_profile,
-        )
+        # self._imu_pub = self._node.create_publisher(
+        #     Imu,
+        #     "/sensing/imu/imu_data",
+        #     qos_profile,
+        # )
 
         self._tf_broadcaster = TransformBroadcaster(self._node)
 
@@ -638,7 +671,7 @@ class AutowarePureAV:
         self._publish_ego_state()
         self._publish_dynamic_objects()
         self._publish_occupancy_grid()
-        self._publish_imu()
+        # self._publish_imu()
         self._publish_dummy_pointcloud()
 
     def _on_control(self, msg: Control) -> None:
@@ -662,7 +695,6 @@ class AutowarePureAV:
         while not client.wait_for_service(timeout_sec=1.0):
             if time.time() - start > timeout:
                 msg = f"Service {name} not available after {timeout}s"
-                logger.error(msg)
                 self._last_error = msg
                 self._quit_flag = True
                 return
@@ -718,17 +750,12 @@ class AutowarePureAV:
             time.sleep(0.01)
 
         res = fut.result()
-
         if res is None or not res.status.success:
-            msg = f"InitializeLocalization failed: {getattr(res.status, 'message', 'unknown') if res else 'no response'}"
+            status_msg = getattr(res.status, "message", None) if res else "no response"
             code = getattr(res.status, "code", "unknown") if res else "no response"
             succ = getattr(res.status, "success", "unknown") if res else "no response"
-            logger.error(
-                f"InitializeLocalization response: code={code}, success={succ}"
-            )
-            logger.error(msg)
-            self._last_error = msg
-            self._quit_flag = True
+            msg = f"InitializeLocalization failed: code={code}, success={succ}, message={status_msg}"
+            raise RuntimeError(msg)
 
         logger.debug("Called InitializeLocalization service.")
 
@@ -761,10 +788,11 @@ class AutowarePureAV:
             time.sleep(0.01)
         res = fut.result()
         if res is None or not res.status.success:
-            msg = f"SetRoutePoints failed: {getattr(res.status, 'message', 'unknown') if res else 'no response'}"
-            logger.error(msg)
-            self._last_error = msg
-            self._quit_flag = True
+            status_msg = getattr(res.status, "message", None) if res else "no response"
+            code = getattr(res.status, "code", "unknown") if res else "no response"
+            succ = getattr(res.status, "success", "unknown") if res else "no response"
+            msg = f"SetRoutePoints failed: code={code}, success={succ}, message={status_msg}"
+            raise RuntimeError(msg)
 
     def _call_change_to_autonomous(self) -> None:
         assert self._node is not None
@@ -777,9 +805,9 @@ class AutowarePureAV:
         res = fut.result()
         if res is None or not res.status.success:
             msg = f"ChangeOperationMode(AUTONOMOUS) failed: {getattr(res.status, 'message', 'unknown') if res else 'no response'}"
-            logger.error(msg)
             self._last_error = msg
             self._quit_flag = True
+            raise RuntimeError(msg)
 
     # ------------------------------------------------------------------
     # publish helpers
@@ -864,11 +892,10 @@ class AutowarePureAV:
 
             # Twist
             kin.has_twist = True
+            # TODO: Agent's twist calculation
             kin.has_twist_covariance = False
             agent_speed = float(ag.get("speed", 0.0))
-            agent_yaw = float(ag.get("yaw", 0.0))
-            kin.twist_with_covariance.twist.linear.x = agent_speed * math.cos(agent_yaw)
-            kin.twist_with_covariance.twist.linear.y = agent_speed * math.sin(agent_yaw)
+            kin.twist_with_covariance.twist.linear.x = agent_speed
 
             # 賦值
             obj.kinematics = kin
@@ -1013,8 +1040,8 @@ class AutowarePureAV:
 
         self._occupancy_grid_pub.publish(msg)
 
-    def _publish_imu(self) -> None:
-        self._imu_pub.publish(self._imu_state)
+    # def _publish_imu(self) -> None:
+    #     self._imu_pub.publish(self._imu_state)
 
     # ------------------------------------------------------------------
     # helpers

@@ -77,60 +77,108 @@ class Runner:
             self.param_sampler = None
 
     def exec(self) -> None:
-        self.sim.init()
-        self.av.init()
+        sim_ok = False
+        av_ok = False
 
-        if self.param_sampler is not None:
-            logger.info("Starting parameter sampling execution.")
-            total = self.param_sampler.total_permutations()
-            logger.info(f"Total parameter combinations: {total}")
+        try:
+            # --- init ---
+            try:
+                self.sim.init()
+                sim_ok = True
+            except Exception:
+                logger.exception("Simulator initialization failed")
+                return
 
-            for i in range(total):
-                logger.info(f"Sampling iteration {i+1}/{total}")
-                params = self.param_sampler.next()
-                if params is None:
-                    logger.info("Parameter sampling completed.")
-                    break
-                logger.info(f"Running scenario with parameters: {params}")
-                # self.sps.apply_parameter_values(params)
-                self.run_concrete(self.sps, params)
-        else:
-            logger.info("Running a single concrete scenario.")
-            self.run_concrete(self.sps)
+            try:
+                self.av.init()
+                av_ok = True
+            except Exception:
+                logger.exception("AV initialization failed")
+                return
 
-        self.av.stop()
-        self.sim.stop()
+            # --- run ---
+            if self.param_sampler is not None:
+                logger.info("Starting parameter sampling execution.")
+                total = self.param_sampler.total_permutations()
 
-        logger.info("Runner execution completed.")
+                logger.info(f"Total parameter combinations: {total}")
+
+                for i in range(total):
+                    logger.info(f"Sampling iteration {i+1}/{total}")
+                    params = self.param_sampler.next()
+
+                    if params is None:
+                        logger.info("Parameter sampling completed.")
+                        break
+
+                    logger.info(f"Running scenario with parameters: {params}")
+
+                    try:
+                        self.run_concrete(self.sps, params)
+                    except Exception:
+                        logger.exception(f"Scenario failed at iteration {i+1}")
+                        continue
+            else:
+                logger.info("Running a single concrete scenario.")
+                try:
+                    self.run_concrete(self.sps)
+                except Exception:
+                    logger.exception("Scenario failed")
+
+            logger.info("Runner execution completed.")
+
+        finally:
+            if av_ok:
+                try:
+                    self.av.stop()
+                except Exception:
+                    logger.exception("av.stop() failed")
+            if sim_ok:
+                try:
+                    self.sim.stop()
+                except Exception:
+                    logger.exception("sim.stop() failed")
 
     def run_concrete(
         self, sps: ScenarioPack, params: Optional[dict[str, Any]] = None
     ) -> None:
-        self.sim.reset(sps, params)
-        self.av.reset(sps, params)
+        try:
+            self.sim.reset(sps, params)
+        except Exception as e:
+            logger.error(f"Simulator reset failed: {e}")
+            return
+        try:
+            self.av.reset(sps, params)
+        except Exception as e:
+            logger.error(f"AV reset failed: {e}")
+            return
+
         t = 0.0
         # dt = 0.00625
         # dt = 0.01
         dt = -1
         ctrl_for_sim: Ctrl = Ctrl()
+        try:
+            while True:
+                if self.sim.should_quit():
+                    logger.info("Simulator requested to quit.")
+                    break
+                elif self.av.should_quit():
+                    logger.info("AV requested to quit.")
+                    break
+                raw_obs = self.sim.step(ctrl_for_sim, dt)
+                obs_for_av = self.bridge.sim_to_av(raw_obs)
+                ctrl_from_av = self.av.step(obs_for_av, dt)
+                ctrl_for_sim = self.bridge.av_to_sim(ctrl_from_av)
 
-        while True:
-            if self.sim.should_quit():
-                logger.info("Simulator requested to quit.")
-                break
-            elif self.av.should_quit():
-                logger.info("AV requested to quit.")
-                break
-            raw_obs = self.sim.step(ctrl_for_sim, dt)
-            obs_for_av = self.bridge.sim_to_av(raw_obs)
-            ctrl_from_av = self.av.step(obs_for_av, dt)
-            ctrl_for_sim = self.bridge.av_to_sim(ctrl_from_av)
+                # self.monitor.step(
 
-            # self.monitor.step(
+                t += dt
 
-            t += dt
-
-        # self.monitor.finalize()
+            # self.monitor.finalize()
+        except Exception as e:
+            logger.error(f"Error during scenario execution: {e}")
+            return
 
         logger.info("Scenario finished.")
 

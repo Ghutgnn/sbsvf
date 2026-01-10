@@ -22,10 +22,9 @@ autoware:
     sensor_model: "sample_sensor_kit"
 
   runtime:
-    timeout_sec: 30.0
+    timeout_sec: 10.0
     control_timeout_sec: 0.1
     spin_rate_hz: 100.0
     allow_goal_modification: false
-    timeout_sec: 30.0
     # publish_objects: true
     # use_dynamic_objects_topic: true
