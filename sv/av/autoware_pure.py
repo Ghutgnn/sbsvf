@@ -360,7 +360,7 @@ class AutowarePureAV:
                 logger.error("Autoware change to autonomous mode timed out.")
                 self._quit_flag = True
                 self._last_error = "Autoware change to autonomous mode timed out."
-                return
+                raise RuntimeError("Autoware change to autonomous mode timed out.")
 
             logger.info("Autoware is running...")
 
@@ -746,7 +746,8 @@ class AutowarePureAV:
 
         fut = self._client_initial_localization.call_async(req)
 
-        while rclpy.ok() and not fut.done():
+        start = time.time()
+        while rclpy.ok() and not fut.done() and time.time() - start < self._timeout_sec:
             time.sleep(0.01)
 
         res = fut.result()
@@ -784,7 +785,8 @@ class AutowarePureAV:
         )
 
         fut = self._client_set_route_points.call_async(req)
-        while rclpy.ok() and not fut.done():
+        start = time.time()
+        while rclpy.ok() and not fut.done() and time.time() - start < self._timeout_sec:
             time.sleep(0.01)
         res = fut.result()
         if res is None or not res.status.success:
@@ -800,7 +802,8 @@ class AutowarePureAV:
         req = ChangeOperationMode.Request()
         fut = self._client_change_to_auto.call_async(req)
         # rclpy.spin_until_future_complete(self._node, fut)
-        while rclpy.ok() and not fut.done():
+        start = time.time()
+        while rclpy.ok() and not fut.done() and time.time() - start < self._timeout_sec:
             time.sleep(0.01)
         res = fut.result()
         if res is None or not res.status.success:
@@ -1069,18 +1072,6 @@ class AutowarePureAV:
         self._lanelet2_map_file = full_path.name
 
         return full_path
-
-    # def _get_stable_uuid(self, agent_id):
-    #     """確保同一個 agent_id 永遠拿到同一個 UUID"""
-    #     if agent_id not in self._uuid_map:
-    #         # 使用 uuid.uuid4() 生成隨機 ID，轉成 byte array
-    #         # 注意：這裡假設 agent_id 是 simulator 來的唯一整數或字串
-    #         random_uuid = uuid.uuid4()
-    #         self._uuid_map[agent_id] = list(random_uuid.bytes)
-
-    #     uuid_msg = UUID()
-    #     uuid_msg.uuid = self._uuid_map[agent_id]
-    #     return uuid_msg
 
     def _calc_imu_state(self):
         """根據 kinematic 計算 IMU 狀態
