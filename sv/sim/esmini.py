@@ -127,28 +127,43 @@ class EsminiAdapter:
         self._params_obj = None
         self._params_ptr = None
         self.vehicle = None
-        self._setup_esmini_opts()
+        # self._setup_esmini_opts()
         self._setup_function_signatures()
 
     def _setup_esmini_opts(self):
+
+        use_viewer = self.cfg.get("use_viewer", True)
+        threads = self.cfg.get("threads", 0)
+        record = self.cfg.get("record", False)
+
         if "log_file_path" in self.cfg:
             self.se.SE_SetLogFilePath(self.cfg["log_file_path"].encode())
         else:
             logger.info("No log_file_path specified; using default esmini_log.txt")
             self.se.SE_SetLogFilePath(b"./esmini_log.txt")
 
-        if "extra_paths" in self.cfg:
-            for extra_path in self.cfg["extra_paths"]:
+        if "path" in self.cfg:
+            for extra_path in self.cfg["path"]:
+                logger.info(f"Adding esmini path: {extra_path}")
                 self.se.SE_AddPath(extra_path.encode())
 
         if "window" in self.cfg:
             win_cfg = self.cfg["window"]  # ["x", "y", "width", "height"]
+            logger.info(f"Setting esmini window position and size: {win_cfg}")
             self.se.SE_SetWindowPosAndSize(
                 win_cfg[0], win_cfg[1], win_cfg[2], win_cfg[3]
             )
 
         if self.cfg.get("disable_stdout", True):
+            logger.info("Disable stdout in esmini")
             self.se.SE_SetOptionPersistent(b"disable_stdout")
+
+        if self.cfg.get("dat_file_path", None) is not None:
+            dat_file_path = self.cfg["dat_file_path"]
+            logger.info(f"Setting esmini dat file path: {dat_file_path}")
+            self.se.SE_SetDatFilePath(dat_file_path.encode())
+
+        return use_viewer, threads, record
 
     def _setup_function_signatures(self):
         se = self.se
@@ -253,7 +268,9 @@ class EsminiAdapter:
         se.SE_SetOptionPersistent.argtypes = [ct.c_char_p]
         se.SE_SetOptionPersistent.restype = ct.c_int
 
-        # 其他 API 可視需要補 argtypes / restype
+        # SE_DLL_API void SE_SetDatFilePath(const char *datFilePath);
+        se.SE_SetDatFilePath.argtypes = [ct.c_char_p]
+        se.SE_SetDatFilePath.restype = None
 
     def init(self):
         self.sim_state = SimulatorState.AV_CONNECTING
@@ -441,9 +458,10 @@ class EsminiAdapter:
             self._c_param_cb,
             self._params_ptr,
         )
-        self._setup_esmini_opts()
-        print("init esmini with scenario:", sps.scenarios["xosc"])
-        ret = self.se.SE_Init(str(sps.scenarios["xosc"]).encode(), 1, 1, 0, 0)
+        use_viewer, threads, record = self._setup_esmini_opts()
+        ret = self.se.SE_Init(
+            str(sps.scenarios["xosc"]).encode(), 1, use_viewer, threads, record
+        )
         if ret != 0:
             raise RuntimeError(f"esmini SE_Init failed with code {ret}")
         obj_state = SEScenarioObjectState()
