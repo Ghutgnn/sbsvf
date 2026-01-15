@@ -70,7 +70,7 @@ except ImportError:
 
 from sv.utils.position import Position
 from sv.utils.util import get_cfg
-from sv.utils.kinematic import VehicleKinematic
+from sv.utils.object import ObjectKinematic
 from sv.registry import register_av
 from sv.utils.control import Ctrl, CtrlMode
 from sv.utils.sps import ScenarioPack
@@ -156,7 +156,7 @@ class AutowareAV:
         # 狀態
         self._latest_control: Optional[Control] = None
         self._latest_control_stamp = None  # builtin_interfaces/Time or類似
-        self._kinematic: VehicleKinematic = VehicleKinematic()
+        self._kinematic: ObjectKinematic = ObjectKinematic()
         self._kinematic_state_from_aw = None
         # self._kinematic_state_from_aw.orientation.w = (
         #     1.0  # default to a valid quaternion

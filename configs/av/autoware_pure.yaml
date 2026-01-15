@@ -5,7 +5,7 @@ autoware:
   launch:
     package: "autoware_launch"
     file: "sbsvf.launch.xml"
-    headless: true
+    headless: false
     log_path: "/tmp/autoware_launch.log"
     # extra_args:
     # - "launch_rviz:=false"

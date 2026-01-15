@@ -15,6 +15,13 @@ import yaml
 from sv.utils.util import get_cfg
 from sv.utils.sps import ScenarioPack
 from sv.utils.control import Ctrl, CtrlMode
+from sv.utils.object import (
+    ObjectState,
+    ObjectKinematic,
+    RoadObjectType,
+    Shape,
+    ShapeType,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -115,18 +122,33 @@ class Vehicle:
             logger.warning(f"Unsupported control mode: {ctrl.mode}")
 
 
+TYPE_MAP = {
+    0: RoadObjectType.CAR,
+    1: RoadObjectType.VAN,
+    2: RoadObjectType.TRUCK,
+    3: RoadObjectType.BUS,
+    4: RoadObjectType.TRAILER,
+    5: RoadObjectType.BUS,
+    6: RoadObjectType.MOTORCYCLE,
+    7: RoadObjectType.BICYCLE,
+    8: RoadObjectType.TRAIN,
+    9: RoadObjectType.TRAM,
+}
+
+
 @register_sim("esmini")
 class EsminiAdapter:
     def __init__(self, cfg_path: Union[str, Path], sps: ScenarioPack):
         self.sim_state = SimulatorState.INIT
         self.cfg = get_cfg(cfg_path)
         self.esmini_home = self.cfg.get("esmini_home", "/opt/esmini/")
-        self.obj_states = SEScenarioObjectState()
+        # self.obj_states = SEScenarioObjectState()
         self.se = ct.CDLL(self.esmini_home + "bin/libesminiLib.so")  # Linux
         self._c_param_cb = None
         self._params_obj = None
         self._params_ptr = None
-        self.vehicle = None
+        self.ego_car = None
+        self.objects: list[ObjectState] = []
         # self._setup_esmini_opts()
         self._setup_function_signatures()
 
@@ -170,6 +192,10 @@ class EsminiAdapter:
 
         se.SE_GetObjectState.argtypes = [ct.c_int, ct.c_void_p]
         se.SE_GetObjectState.restype = None
+
+        # SE_DLL_API const char *SE_GetObjectTypeName(int object_id)
+        # se.SE_GetObjectTypeName.argtypes = [ct.c_int]
+        # se.SE_GetObjectTypeName.restype = ct.c_char_p
 
         # SE_DLL_API void *SE_SimpleVehicleCreate(float x, float y, float h, float length, float speed);
         se.SE_SimpleVehicleCreate.argtypes = [
@@ -260,6 +286,10 @@ class EsminiAdapter:
         se.SE_GetParameterName.argtypes = [ct.c_int, ct.POINTER(ct.c_int)]
         se.SE_GetParameterName.restype = ct.c_char_p
 
+        # SE_DLL_API int SE_GetNumberOfObjects()
+        se.SE_GetNumberOfObjects.argtypes = []
+        se.SE_GetNumberOfObjects.restype = ct.c_int
+
         se.SE_GetSimTimeStep.restype = ct.c_float
         se.SE_StepDT.argtypes = [ct.c_float]
 
@@ -288,76 +318,49 @@ class EsminiAdapter:
         se = self.se
 
         # Update vehicle control
-        self.vehicle.apply_control(ctrl, dt)
+        self.ego_car.apply_control(ctrl, dt)
 
         obj_id = se.SE_GetId(0)
         se.SE_ReportObjectPosXYH(
             obj_id,
             0.0,
-            self.vehicle.vh_state.x,
-            self.vehicle.vh_state.y,
-            self.vehicle.vh_state.h,
+            self.ego_car.vh_state.x,
+            self.ego_car.vh_state.y,
+            self.ego_car.vh_state.h,
         )
         se.SE_ReportObjectWheelStatus(
             obj_id,
-            self.vehicle.vh_state.wheel_rotation,
-            self.vehicle.vh_state.wheel_angle,
+            self.ego_car.vh_state.wheel_rotation,
+            self.ego_car.vh_state.wheel_angle,
         )
         se.SE_ReportObjectSpeed(
             obj_id,
-            self.vehicle.vh_state.speed,
+            self.ego_car.vh_state.speed,
         )
-        # lane_type = se.SE_GetObjectInLaneType(obj_id)
-        # obs = {
-        #     "x": float(self.vehicle.vh_state.x),
-        #     "y": float(self.vehicle.vh_state.y),
-        #     "h": float(self.vehicle.vh_state.h),
-        #     "speed": float(self.vehicle.vh_state.speed),
-        #     "lane_type": int(lane_type),
-        #     "in_driving_lane": (lane_type & 1966594) != 0,
-        #     "on_road": (lane_type & 1966726) != 0,
-        #     "on_defined_area": lane_type != 1,
-        # }
-
-        # other agents' states
-        # obj_id = se.SE_GetId(1)
-        # obj_state = self.obj_states
-        obj_state = self.obj_states
-        se.SE_GetObjectState(se.SE_GetId(0), ct.byref(obj_state))
-        obs = {
-            "ego": {
-                "x": float(obj_state.x),
-                "y": float(obj_state.y),
-                "yaw": float(obj_state.h),
-                "speed": float(obj_state.speed),
-            },
-            "agents": [],
-        }
-
-        for i in range(1, se.SE_GetNumberOfObjects()):
+        for i in range(0, self.obj_count):
+            obj_state = SEScenarioObjectState()
             se.SE_GetObjectState(se.SE_GetId(i), ct.byref(obj_state))
-            obs["agents"].append(
-                {
-                    "id": int(obj_state.id),
-                    # "type": int(obj_state.objectType),
-                    "x": float(obj_state.x),
-                    "y": float(obj_state.y),
-                    "yaw": float(obj_state.h),
-                    "speed": float(obj_state.speed),
-                }
+            kinematic = ObjectKinematic(
+                time=float(obj_state.timestamp),
+                x=float(obj_state.x),
+                y=float(obj_state.y),
+                z=float(obj_state.z),
+                yaw=float(obj_state.h),
+                speed=float(obj_state.speed),
             )
+            self.objects[i].update(kinematic)
 
         if dt <= 0:
             se.SE_StepDT(ct.c_float(dt))
         else:
             se.SE_StepDT(ct.c_float(dt))
-        return obs
+        return self.objects
 
     def stop(self):
         self.se.SE_Close()
-        if self.vehicle is not None:
-            self.se.SE_SimpleVehicleDelete(self.vehicle.sv_handle)
-            self.vehicle = None
+        if self.ego_car is not None:
+            self.se.SE_SimpleVehicleDelete(self.ego_car.sv_handle)
+            self.ego_car = None
         logger.info("Esmini simulator stopped.")
 
     def parameter_declaration_callback(self, params: dict[str, Any]) -> int:
@@ -464,15 +467,60 @@ class EsminiAdapter:
         )
         if ret != 0:
             raise RuntimeError(f"esmini SE_Init failed with code {ret}")
-        obj_state = SEScenarioObjectState()
-        self.se.SE_GetObjectState(self.se.SE_GetId(0), ct.byref(obj_state))
-        self.vehicle = Vehicle(
+
+        self.obj_count = self.se.SE_GetNumberOfObjects()
+        self.objects = []
+        for i in range(0, self.obj_count):
+            obj_state = SEScenarioObjectState()
+            self.se.SE_GetObjectState(self.se.SE_GetId(i), ct.byref(obj_state))
+
+            esmini_obj_type = int(obj_state.objectType)
+            obj_category = int(obj_state.objectCategory)
+            obj_type = RoadObjectType.UNKNOWN
+            if esmini_obj_type == 2:  # Pedestrian type
+                if obj_category == 0:  # Pedestrian
+                    obj_type = RoadObjectType.PEDESTRIAN
+                elif obj_category == 1:  # Wheelchair
+                    obj_type = RoadObjectType.WHEELCHAIR
+                elif obj_category == 2:  # Animal
+                    obj_type = RoadObjectType.ANIMAL
+                else:
+                    obj_type = RoadObjectType.UNKNOWN
+            else:  # Vehicle type
+                obj_type = TYPE_MAP.get(obj_category, RoadObjectType.UNKNOWN)
+
+            obj_kinematic = ObjectKinematic(
+                time=float(obj_state.timestamp),
+                x=float(obj_state.x),
+                y=float(obj_state.y),
+                z=float(obj_state.z),
+                yaw=float(obj_state.h),
+                speed=float(obj_state.speed),
+            )
+
+            obj_shape = Shape(
+                type=ShapeType.BOUNDING_BOX,
+                dimensions=(
+                    float(obj_state.length),
+                    float(obj_state.width),
+                    float(obj_state.height),
+                ),
+            )
+            obj = ObjectState.create(
+                type=obj_type,
+                kinematic=obj_kinematic,
+                shape=obj_shape,
+            )
+
+            self.objects.append(obj)
+
+        self.ego_car = Vehicle(
             self.se,
-            obj_state.x,
-            obj_state.y,
-            obj_state.h,
-            obj_state.length,
-            obj_state.speed,
+            x=float(self.objects[0].kinematic.x),
+            y=float(self.objects[0].kinematic.y),
+            h=float(self.objects[0].kinematic.yaw),
+            length=float(self.objects[0].shape.dimensions[0]),
+            speed=float(self.objects[0].kinematic.speed),
         )
 
     # define a function returning if the simulator need to stop

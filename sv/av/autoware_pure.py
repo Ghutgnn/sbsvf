@@ -30,7 +30,7 @@ import autoware_perception_msgs.msg as autoware_perception_msgs
 
 from sv.utils.position import Position
 from sv.utils.util import get_cfg
-from sv.utils.kinematic import VehicleKinematic
+from sv.utils.object import ObjectKinematic, ShapeType
 from sv.registry import register_av
 from sv.utils.control import Ctrl, CtrlMode
 from sv.utils.sps import ScenarioPack
@@ -117,9 +117,9 @@ class AutowarePureAV:
             autoware_control_msgs.Control()
         )
         self._latest_control_stamp = None
-        self._kinematic: VehicleKinematic = VehicleKinematic()
-        self._prev_kinematic: VehicleKinematic = VehicleKinematic()
-        self._prev_prev_kinematic: VehicleKinematic = VehicleKinematic()
+        self._kinematic: ObjectKinematic = ObjectKinematic()
+        self._prev_kinematic: ObjectKinematic = ObjectKinematic()
+        self._prev_prev_kinematic: ObjectKinematic = ObjectKinematic()
         self._imu_state = sensor_msgs.Imu()
         # self._motion_state: int = MotionState.UNKNOWN
         self._quit_flag: bool = False
@@ -196,14 +196,14 @@ class AutowarePureAV:
         self._last_error = None
         # self._imu_state = sensor_msgs.Imu()
 
-        self._kinematic = VehicleKinematic()
-        self._prev_kinematic = VehicleKinematic()
-        self._prev_prev_kinematic = VehicleKinematic()
+        self._kinematic = ObjectKinematic()
+        self._prev_kinematic = ObjectKinematic()
+        self._prev_prev_kinematic = ObjectKinematic()
 
         ipos = sps.ego.spawn.position
         ispeed = sps.ego.spawn.speed
 
-        init_kinematic = VehicleKinematic.from_dict(ipos.to_dict())
+        init_kinematic = ObjectKinematic.from_dict(ipos.to_dict())
         init_kinematic.time = float(self._node.get_clock().now().nanoseconds) * 1e-9
 
         # TODO: check position type consistency
@@ -325,15 +325,15 @@ class AutowarePureAV:
 
             logger.info("Autoware is running...")
 
-        ego = obs.get("ego", None)
+        ego = obs[0]
         if ego is not None:
-            cur_kinematic = VehicleKinematic.from_dict(ego)
+            cur_kinematic = ego.kinematic
             cur_kinematic.time = float(self._node.get_clock().now().nanoseconds) * 1e-9
             self._update_kinematic(cur_kinematic)
         else:
             logger.debug("AutowareAV.step called without 'ego' state in obs")
 
-        self._agents = obs.get("agents", [])
+        self._agents = obs[1:] if len(obs) > 1 else []
 
         # wait for new control message
         wait_time = max(self._control_timeout_sec, float(dt))
@@ -814,58 +814,79 @@ class AutowarePureAV:
         msg = autoware_perception_msgs.DetectedObjects()
         msg.header.stamp = self._node.get_clock().now().to_msg()
         msg.header.frame_id = "map"
+        try:
+            for ag in self._agents:
+                obj = autoware_perception_msgs.DetectedObject()
 
-        for ag in self._agents:
-            obj = autoware_perception_msgs.DetectedObject()
+                # 1. existence_probability
+                obj.existence_probability = 1.0
 
-            # 1. existence_probability
-            obj.existence_probability = 1.0
+                # 2. Classification
+                clas = autoware_perception_msgs.ObjectClassification()
+                # TODO: 根據 agent type 設定不同 label
+                clas.label = autoware_perception_msgs.ObjectClassification.CAR
+                clas.probability = 1.0
+                obj.classification = [clas]
 
-            # 2. Classification
-            clas = autoware_perception_msgs.ObjectClassification()
-            # TODO: 根據 agent type 設定不同 label
-            clas.label = autoware_perception_msgs.ObjectClassification.CAR
-            clas.probability = 1.0
-            obj.classification = [clas]
+                # 3. Shape
+                shp = autoware_perception_msgs.Shape()
 
-            # 3. Shape
-            shp = autoware_perception_msgs.Shape()
-            # TODO: 根據 agent type 設定不同 shape
-            shp.type = autoware_perception_msgs.Shape.BOUNDING_BOX
-            shp.dimensions.x = float(ag.get("length", 4.0))
-            shp.dimensions.y = float(ag.get("width", 2.0))
-            shp.dimensions.z = float(ag.get("height", 1.6))
-            obj.shape = shp
+                if ag.shape.type == ShapeType.CYLINDER:
+                    shp.type = autoware_perception_msgs.Shape.CYLINDER
+                elif ag.shape.type == ShapeType.BOUNDING_BOX:
+                    shp.type = autoware_perception_msgs.Shape.BOUNDING_BOX
+                elif ag.shape.type == ShapeType.POLYGON:
+                    shp.type = autoware_perception_msgs.Shape.POLYGON
+                else:
+                    raise ValueError(f"Unknown shape type: {ag.shape.type}")
 
-            # 4. Kinematics
-            kin = autoware_perception_msgs.DetectedObjectKinematics()
+                if ag.shape.type != ShapeType.POLYGON:
+                    shp.dimensions.x = ag.shape.dimensions[0]
+                    shp.dimensions.y = ag.shape.dimensions[1]
+                    shp.dimensions.z = ag.shape.dimensions[2]
+                else:
+                    for pt in ag.shape.polygon:
+                        p = geometry_msgs.Point32()
+                        p.x = pt[0]
+                        p.y = pt[1]
+                        p.z = pt[2]
+                        shp.footprint.points.append(p)
+                    shp.height = ag.shape.dimensions[2]
 
-            kin.orientation_availability = (
-                2  # (0:UNAVAILABLE, 1:SIGN_UNKNOWN, 2:AVAILABLE)
-            )
-            kin.has_position_covariance = False
+                obj.shape = shp
 
-            # Pose
-            kin.pose_with_covariance.pose.position.x = float(ag.get("x", 0.0))
-            kin.pose_with_covariance.pose.position.y = float(ag.get("y", 0.0))
-            kin.pose_with_covariance.pose.position.z = float(ag.get("z", 0.0))
+                # 4. Kinematics
+                kin = autoware_perception_msgs.DetectedObjectKinematics()
 
-            qz, qw = self._yaw_to_quat(float(ag.get("yaw", 0.0)))
-            kin.pose_with_covariance.pose.orientation.z = qz
-            kin.pose_with_covariance.pose.orientation.w = qw
+                kin.orientation_availability = (
+                    2  # (0:UNAVAILABLE, 1:SIGN_UNKNOWN, 2:AVAILABLE)
+                )
+                kin.has_position_covariance = False
 
-            # Twist
-            kin.has_twist = True
-            # TODO: Agent's twist calculation
-            kin.has_twist_covariance = False
-            agent_speed = float(ag.get("speed", 0.0))
-            kin.twist_with_covariance.twist.linear.x = agent_speed
+                # Pose
+                kin.pose_with_covariance.pose.position.x = ag.kinematic.x
+                kin.pose_with_covariance.pose.position.y = ag.kinematic.y
+                kin.pose_with_covariance.pose.position.z = ag.kinematic.z
 
-            # 賦值
-            obj.kinematics = kin
+                # qz, qw = self._yaw_to_quat(float(ag.get("yaw", 0.0)))
+                qz, qw = self._yaw_to_quat(ag.kinematic.yaw)
+                kin.pose_with_covariance.pose.orientation.z = qz
+                kin.pose_with_covariance.pose.orientation.w = qw
 
-            # 加入列表
-            msg.objects.append(obj)
+                # Twist
+                kin.has_twist = True
+                # TODO: Agent's twist calculation
+                kin.has_twist_covariance = False
+                agent_speed = ag.kinematic.speed
+                kin.twist_with_covariance.twist.linear.x = agent_speed
+
+                # 賦值
+                obj.kinematics = kin
+
+                # 加入列表
+                msg.objects.append(obj)
+        except Exception as e:
+            logger.error(f"Error publishing dynamic objects: {e}")
 
         self._objects_pub.publish(msg)
 
@@ -1012,7 +1033,7 @@ class AutowarePureAV:
     # ------------------------------------------------------------------
     # helpers
     # ------------------------------------------------------------------
-    def _update_kinematic(self, kinematic: VehicleKinematic) -> None:
+    def _update_kinematic(self, kinematic: ObjectKinematic) -> None:
         self._prev_prev_kinematic = self._prev_kinematic
         self._prev_kinematic = self._kinematic
         self._kinematic = kinematic

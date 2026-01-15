@@ -39,8 +39,9 @@ test_aw:
     map_path:=/autoware_map/sbsvf \
     vehicle_model:=sample_vehicle \
     sensor_model:=sample_sensor_kit \
-    launch_system_monitor:=true \
+    launch_system_monitor:=false \
     initial_engage_state:=false \
+    use_sim_time:=true
     
 
 sb:
