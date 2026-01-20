@@ -23,7 +23,7 @@ autoware:
 
   runtime:
     timeout_sec: 10.0
-    control_timeout_sec: 0.1
+    control_timeout_sec: 0.03
     spin_rate_hz: 100.0
     allow_goal_modification: false
     # publish_objects: true

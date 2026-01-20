@@ -1,5 +1,5 @@
 # sv/runner.py
-from time import sleep
+from time import sleep, time
 from typing import Any, Optional
 import logging
 from pathlib import Path
@@ -26,6 +26,7 @@ logger = logging.getLogger(__name__)
 class Runner:
     def __init__(
         self,
+        runtime_cfg: dict,
         plan_name: str,
         sim_cfg: dict,
         av_cfg: dict,
@@ -35,24 +36,28 @@ class Runner:
         sps: ScenarioPack,
     ):
         self.plan_name = plan_name
+        self.runtime_cfg = runtime_cfg
         self.sps = sps
         self.sim = build_instance_from_registry(
             SIM_REGISTRY,
             name=sim_cfg["name"],
             cfg_path=sim_cfg.get("cfg_path", None),
             sps=sps,
+            runtime_cfg=runtime_cfg,
         )
         self.av = build_instance_from_registry(
             AV_REGISTRY,
             name=av_cfg["name"],
             cfg_path=av_cfg.get("cfg_path", None),
             sps=sps,
+            runtime_cfg=runtime_cfg,
         )
         self.bridge = build_instance_from_registry(
             BRIDGE_REGISTRY,
             name=bridge_cfg["name"],
             cfg_path=bridge_cfg.get("cfg_path", None),
             sps=sps,
+            runtime_cfg=runtime_cfg,
         )
         self.monitor = build_instance_from_registry(
             MONITOR_REGISTRY,
@@ -60,6 +65,7 @@ class Runner:
             cfg_path=monitor_cfg.get("cfg_path", None),
             plan_name=plan_name,
             sps=sps,
+            runtime_cfg=runtime_cfg,
         )
         if self.sps.param_range_file is not None:
             logger.info("Parameter range file provided: %s", self.sps.param_range_file)
@@ -114,14 +120,14 @@ class Runner:
                     logger.info(f"Running scenario with parameters: {params}")
 
                     try:
-                        self.run_concrete(self.sps, params)
+                        self.run_concrete(self.runtime_cfg, self.sps, params)
                     except Exception:
                         logger.exception(f"Scenario failed at iteration {i+1}")
                         continue
             else:
                 logger.info("Running a single concrete scenario.")
                 try:
-                    self.run_concrete(self.sps)
+                    self.run_concrete(self.runtime_cfg, self.sps)
                 except Exception:
                     logger.exception("Scenario failed")
 
@@ -140,7 +146,10 @@ class Runner:
                     logger.exception("sim.stop() failed")
 
     def run_concrete(
-        self, sps: ScenarioPack, params: Optional[dict[str, Any]] = None
+        self,
+        runtime_cfg: dict,
+        sps: ScenarioPack,
+        params: Optional[dict[str, Any]] = None,
     ) -> None:
         try:
             self.sim.reset(sps, params)
@@ -153,12 +162,16 @@ class Runner:
             logger.error(f"AV reset failed: {e}")
             return
 
-        t = 0.0
-        # dt = 0.00625
-        # dt = 0.01
-        dt = -1
+        dt = runtime_cfg.get("dt", -1)
+        use_real_time = False
+        if dt <= 0:  # use real-time stepping
+            dt = 0.01  # first step
+            use_real_time = True
+            prev = time()
+        time_stamp = 0.0  # seconds
         ctrl_for_sim: Ctrl = Ctrl()
         try:
+            sim_start_time = time()
             while True:
                 if self.sim.should_quit():
                     logger.info("Simulator requested to quit.")
@@ -166,20 +179,44 @@ class Runner:
                 elif self.av.should_quit():
                     logger.info("AV requested to quit.")
                     break
-                raw_obs = self.sim.step(ctrl_for_sim, dt)
-                obs_for_av = self.bridge.sim_to_av(raw_obs)
-                ctrl_from_av = self.av.step(obs_for_av, dt)
-                ctrl_for_sim = self.bridge.av_to_sim(ctrl_from_av)
 
+                if use_real_time:
+                    t = time()
+                    dt = t - prev
+                    prev = t
+
+                loop_start_time = time()
+                time_stamp += dt
+                raw_obs = self.sim.step(ctrl_for_sim, time_stamp)
+                # time_1 = time()
+                # print("Sim step time: ", time_1 - cur)
+                obs_for_av = self.bridge.sim_to_av(raw_obs)
+                # time_2 = time()
+                # print("Bridge sim_to_av time: ", time_2 - time_1)
+                ctrl_from_av = self.av.step(obs_for_av, time_stamp)
+                # time_3 = time()
+                # print("AV step time: ", time_3 - time_2)
+                ctrl_for_sim = self.bridge.av_to_sim(ctrl_from_av)
+                # time_4 = time()
+                # print("Bridge av_to_sim time: ", time_4 - time_3)
+                # time_need = time() - cur
+                # print("--------Step time: ", time_need)
+                # cur = time()
                 # self.monitor.step(
 
-                t += dt
+                loop_need_time = time() - loop_start_time
+                # sleep_time = dt - loop_need_time
+                # if sleep_time > 0:
+                #     sleep(sleep_time)
 
+            sim_time_need = time() - sim_start_time
             # self.monitor.finalize()
         except Exception as e:
             logger.error(f"Error during scenario execution: {e}")
             return
-
+        logger.info(
+            f"Completed {time_stamp} seconds scenario, using {sim_time_need} sec."
+        )
         logger.info("Scenario finished.")
 
 

@@ -2,7 +2,7 @@
 name: esmini_embedded_controller_distribution
 mode: A # A: planning-only, B: full-stack (ROS2)
 runtime:
-  sim_dt: 0.01
+  dt: 0.01
   av:
     connect_time_limit_s: 30
     retry: 1

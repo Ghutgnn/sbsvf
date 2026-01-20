@@ -86,7 +86,6 @@ class Vehicle:
 
     def __init__(self, se, x, y, h, length, speed):
         self._se = se
-
         self.sv_handle = self._se.SE_SimpleVehicleCreate(x, y, h, length, speed)
         self.vh_state = SESimpleVehicleState()
         self._se.SE_SimpleVehicleGetState(self.sv_handle, ct.byref(self.vh_state))
@@ -138,7 +137,10 @@ TYPE_MAP = {
 
 @register_sim("esmini")
 class EsminiAdapter:
-    def __init__(self, cfg_path: Union[str, Path], sps: ScenarioPack):
+    def __init__(
+        self, cfg_path: Union[str, Path], sps: ScenarioPack, runtime_cfg: dict
+    ):
+        self._time = 0.0
         self.sim_state = SimulatorState.INIT
         self.cfg = get_cfg(cfg_path)
         self.esmini_home = self.cfg.get("esmini_home", "/opt/esmini/")
@@ -308,13 +310,16 @@ class EsminiAdapter:
     def start(self, cfg: dict):
         pass
 
-    def step(self, ctrl: Ctrl, dt: float):
+    def step(self, ctrl: Ctrl, time_stamp: float):
         # if self.sim_state == SimulatorState.AV_CONNECTING:
         #     if ctrl.payload.get("pedal", 0) != 0 or ctrl.payload.get("wheel", 0) != 0:
         #         self.sim_state = SimulatorState.RUNNING
         #         logger.info("AV engaged.")
         #     return None
-        dt = dt if dt > 0 else self.se.SE_GetSimTimeStep()
+        dt = max(time_stamp - self._time, 0.0)
+        self._time = time_stamp
+        # time_stamp = time_stamp if time_stamp > 0 else self.se.SE_GetSimTimeStep()
+
         se = self.se
 
         # Update vehicle control
@@ -350,10 +355,7 @@ class EsminiAdapter:
             )
             self.objects[i].update(kinematic)
 
-        if dt <= 0:
-            se.SE_StepDT(ct.c_float(dt))
-        else:
-            se.SE_StepDT(ct.c_float(dt))
+        se.SE_StepDT(ct.c_float(dt))
         return self.objects
 
     def stop(self):

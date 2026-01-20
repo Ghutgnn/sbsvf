@@ -5,7 +5,9 @@ from sv.utils.sps import ScenarioPack
 
 @register_monitor("default")
 class defaultMonitor:
-    def __init__(self, cfg_path: dict, plan_name: str, sps: ScenarioPack) -> None:
+    def __init__(
+        self, cfg_path: dict, plan_name: str, sps: ScenarioPack, runtime_cfg: dict
+    ) -> None:
         self.plan_name = plan_name
         self.scenario_name = sps.name
         self.record_type = ["rosbag", "video", "state"]

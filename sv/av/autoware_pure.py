@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import math
 import os
+import pprint
 import subprocess
 import threading
 import signal
@@ -18,6 +19,7 @@ from rclpy.executors import MultiThreadedExecutor
 from rclpy.qos import QoSProfile, ReliabilityPolicy, DurabilityPolicy, HistoryPolicy
 from tf2_ros import TransformBroadcaster
 
+import rosgraph_msgs.msg as rosgraph_msgs
 import nav_msgs.msg as nav_msgs
 import geometry_msgs.msg as geometry_msgs
 import autoware_system_msgs.msg as autoware_system_msgs
@@ -49,7 +51,7 @@ class AutowarePureAV:
     - should_quit(): 依 motion state / error / process 狀態決定是否結束
     """
 
-    def __init__(self, cfg_path: Path, sps: Any):
+    def __init__(self, cfg_path: Path, sps: Any, runtime_cfg: dict):
         cfg = get_cfg(Path(cfg_path))
         self._autoware_cfg = cfg.get("autoware", {})
 
@@ -67,6 +69,9 @@ class AutowarePureAV:
         self._autoware_log_path = Path(
             launch_cfg.get("log_path", "/tmp/autoware_launch.log")
         )
+
+        self._dt = runtime_cfg.get("dt", 0.02)
+
         data_cfg = self._autoware_cfg.get("data", {})
         self._data_path = Path(data_cfg.get("data_path", "/autoware_data"))
 
@@ -77,7 +82,7 @@ class AutowarePureAV:
         rt_cfg = self._autoware_cfg.get("runtime", {})
         self._timeout_sec = float(rt_cfg.get("timeout_sec", 30.0))
         self._control_timeout_sec = float(rt_cfg.get("control_timeout_sec", 0.1))
-        self._spin_rate_hz = float(rt_cfg.get("spin_rate_hz", 100.0))
+        # self._spin_rate_hz = float(rt_cfg.get("spin_rate_hz", 100.0))
 
         # ScenarioPack
         self._sps: Optional[ScenarioPack] = sps
@@ -111,6 +116,11 @@ class AutowarePureAV:
         self._client_change_to_auto = None
 
         # 狀態
+        self._initialized: bool = False
+        self._base_time: float = 0.0  # time at sim_time = 0.0 (seconds)
+        self._sim_time_stamp: float = 0.0  # time at current sim step (seconds)
+        self._current_ros_time: float = 0.0  # = _base_time + _sim_time_stamp
+        self._last_heavy_data_time: float = 0.0
         self._vehicle_state: Optional[int] = None
         self._current_gear: Optional[int] = None
         self._latest_control: autoware_control_msgs.Control = (
@@ -136,6 +146,7 @@ class AutowarePureAV:
         - Launch Autoware (subprocess)
         - Wait for API services ready
         """
+
         rclpy.init()
         self._ensure_ros_node()
 
@@ -156,6 +167,7 @@ class AutowarePureAV:
                 f"AutowarePureAV init failed: {self._last_error or 'unknown error'}"
             )
 
+        logger.info(f"Launching Autoware... (Current state: {self._vehicle_state})")
         logger.info("Autoware AV initialized and Autoware stack is ready.")
 
     def reset(self, sps: ScenarioPack, params: Optional[dict] = None) -> None:
@@ -199,12 +211,15 @@ class AutowarePureAV:
         self._kinematic = ObjectKinematic()
         self._prev_kinematic = ObjectKinematic()
         self._prev_prev_kinematic = ObjectKinematic()
-
+        # self._base_time = self._current_ros_time
+        # self._sim_time_stamp = 0.0
+        # self._current_ros_time = self._base_time
         ipos = sps.ego.spawn.position
         ispeed = sps.ego.spawn.speed
 
         init_kinematic = ObjectKinematic.from_dict(ipos.to_dict())
-        init_kinematic.time = float(self._node.get_clock().now().nanoseconds) * 1e-9
+        # init_kinematic.time = float(self._node.get_clock().now().nanoseconds) * 1e-9
+        init_kinematic.time = self._current_ros_time
 
         # TODO: check position type consistency
         init_kinematic.yaw = (
@@ -272,7 +287,7 @@ class AutowarePureAV:
 
         logger.info("Autoware reset ready. Ready to engage.")
 
-    def step(self, obs: Dict[str, Any], dt: float) -> Ctrl:
+    def step(self, obs: Dict[str, Any], time_stamp: float) -> Ctrl:
         """
         - 發 ego state + optional agents 給 Autoware
         - 等待一筆「新的」 control_cmd（最多 control_timeout_sec）
@@ -285,6 +300,9 @@ class AutowarePureAV:
         }
         """
         self._ensure_ros_node()
+
+        self._sim_time_stamp = time_stamp
+        self._current_ros_time = self._base_time + self._sim_time_stamp
 
         if (
             self._vehicle_state != autoware_system_msgs.AutowareState.WAITING_FOR_ENGAGE
@@ -299,6 +317,7 @@ class AutowarePureAV:
             logger.info("Changing Autoware to autonomous mode...")
 
             try:
+                input("Press Enter to change Autoware to autonomous mode...`")
                 self._call_change_to_autonomous()
             except RuntimeError as e:
                 self._quit_flag = True
@@ -323,30 +342,51 @@ class AutowarePureAV:
                 self._last_error = "Autoware change to autonomous mode timed out."
                 raise RuntimeError("Autoware change to autonomous mode timed out.")
 
+            self._initialized = True
             logger.info("Autoware is running...")
 
         ego = obs[0]
         if ego is not None:
             cur_kinematic = ego.kinematic
-            cur_kinematic.time = float(self._node.get_clock().now().nanoseconds) * 1e-9
+            cur_kinematic.time = self._current_ros_time
             self._update_kinematic(cur_kinematic)
         else:
             logger.debug("AutowareAV.step called without 'ego' state in obs")
 
         self._agents = obs[1:] if len(obs) > 1 else []
 
-        # wait for new control message
-        wait_time = max(self._control_timeout_sec, float(dt))
-        deadline = time.time() + wait_time
-        last_stamp = self._latest_control.stamp
+        # publish
+        self._publish_tf()
+        self._publish_control_mode()
+        self._publish_gear_report()
+        self._publish_steering_report()
+        self._publish_velocity_report()
+        self._publish_ego_state()
+        self._publish_dynamic_objects()
+        self._publish_occupancy_grid()
+        self._publish_dummy_pointcloud()
+        time.sleep(0.001)  # allow some time for messages to be sent
+        self._publish_clock(self._current_ros_time)
 
-        while time.time() < deadline:
-            if (
-                self._latest_control_stamp is not None
-                and self._latest_control_stamp != last_stamp
-            ):
-                break
-            time.sleep(0.001)
+        # if self._sim_time_stamp - self._last_heavy_data_time >= 0.1:
+        #     self._publish_occupancy_grid()
+        #     self._publish_dummy_pointcloud()
+        #     self._last_heavy_data_time = self._sim_time_stamp
+
+        # wait for new control message
+        last_stamp = self._latest_control.stamp
+        last_second = last_stamp.sec + last_stamp.nanosec * 1e-9
+
+        if self._current_ros_time - last_second > 0.3:
+            wait_time = max(self._control_timeout_sec, float(0.001))
+            deadline = time.time() + wait_time
+            while time.time() < deadline:
+                if (
+                    self._latest_control_stamp is not None
+                    and self._latest_control_stamp != last_stamp
+                ):
+                    break
+                time.sleep(0.001)
 
         if self._latest_control is None:
             logger.warning(
@@ -414,7 +454,9 @@ class AutowarePureAV:
         self._node = rclpy.create_node("autoware_av_adapter")
         self._executor = MultiThreadedExecutor()
         self._executor.add_node(self._node)
-        self._node.create_timer(0.02, self._timer_callback)
+        # duration = self._dt if self._dt > 0 else 0.01  # default 100Hz
+        duration = 0.01
+        self._node.create_timer(duration, self._timer_callback)
 
         # QoS Profile
         # qos_profile = QoSProfile(
@@ -497,6 +539,17 @@ class AutowarePureAV:
         #     qos_profile,
         # )
 
+        self._clock_pub = self._node.create_publisher(
+            rosgraph_msgs.Clock,
+            "/clock",
+            QoSProfile(
+                reliability=ReliabilityPolicy.RELIABLE,
+                durability=DurabilityPolicy.VOLATILE,
+                history=HistoryPolicy.KEEP_LAST,
+                depth=1,
+            ),
+        )
+
         self._tf_broadcaster = TransformBroadcaster(self._node)
 
         # subscribers
@@ -541,10 +594,11 @@ class AutowarePureAV:
 
     def _spin(self) -> None:
         assert self._executor is not None
-        period = 1.0 / self._spin_rate_hz if self._spin_rate_hz > 0 else 0.01
+        # period = 1.0 / self._spin_rate_hz if self._spin_rate_hz > 0 else 0.01
         while rclpy.ok() and self._node is not None:
             try:
-                self._executor.spin_once(timeout_sec=period)
+                # self._executor.spin_once(timeout_sec=period)
+                self._executor.spin()
             except Exception as e:  # noqa: BLE001
                 logger.error(f"AutowareAV executor error: {e}")
                 self._last_error = str(e)
@@ -624,16 +678,26 @@ class AutowarePureAV:
     # callbacks
     # ------------------------------------------------------------------
     def _timer_callback(self):
-        self._publish_tf()
-        self._publish_control_mode()
-        self._publish_gear_report()
-        self._publish_steering_report()
-        self._publish_velocity_report()
-        self._publish_ego_state()
-        self._publish_dynamic_objects()
-        self._publish_occupancy_grid()
-        # self._publish_imu()
-        self._publish_dummy_pointcloud()
+        if not self._initialized:
+            # now = time.time()
+            self._base_time += self._dt
+            self._current_ros_time = self._base_time
+            self._publish_tf()
+            self._publish_control_mode()
+            self._publish_gear_report()
+            self._publish_steering_report()
+            self._publish_velocity_report()
+            self._publish_ego_state()
+            self._publish_dynamic_objects()
+            self._publish_occupancy_grid()
+            self._publish_dummy_pointcloud()
+
+            self._publish_clock(self._current_ros_time)
+
+            # if now - self._last_heavy_data_time >= 0.1:
+            #     self._publish_occupancy_grid()
+            #     # self._publish_imu()
+            #     self._publish_dummy_pointcloud()
 
     def _on_control(self, msg: autoware_control_msgs.Control) -> None:
         self._latest_control = msg
@@ -665,6 +729,7 @@ class AutowarePureAV:
     def _call_initialize_localization(self, sps: ScenarioPack) -> None:
         assert self._node is not None
         now = self._node.get_clock().now().to_msg()
+        now = self._convert_float_to_ros_time(self._current_ros_time).to_msg()
 
         ipos = sps.ego.spawn.position
         ispeed = sps.ego.spawn.speed
@@ -688,7 +753,8 @@ class AutowarePureAV:
 
         req = autoware_adapi_v1_msgs_srv.InitializeLocalization.Request()
         pose_msg = geometry_msgs.PoseWithCovarianceStamped()
-        pose_msg.header.stamp = self._node.get_clock().now().to_msg()
+        # pose_msg.header.stamp = self._node.get_clock().now().to_msg()
+        pose_msg.header.stamp = now
         pose_msg.header.frame_id = "map"
 
         pose_msg.pose.pose.position.x = float(ipos.x)
@@ -726,7 +792,10 @@ class AutowarePureAV:
 
         req = autoware_adapi_v1_msgs_srv.SetRoutePoints.Request()
         req.header.frame_id = "map"
-        req.header.stamp = self._node.get_clock().now().to_msg()
+        # req.header.stamp = self._node.get_clock().now().to_msg()
+        req.header.stamp = self._convert_float_to_ros_time(
+            self._current_ros_time
+        ).to_msg()
 
         gp = sps.ego.goal.position
         goal = geometry_msgs.Pose()
@@ -779,7 +848,9 @@ class AutowarePureAV:
     def _publish_ego_state(self) -> None:
         assert self._node is not None
 
-        now = self._node.get_clock().now().to_msg()
+        # now = self._node.get_clock().now().to_msg()
+        now = self._convert_float_to_ros_time(self._current_ros_time).to_msg()
+
         ego = self._kinematic
 
         # ODOMETRY
@@ -812,7 +883,10 @@ class AutowarePureAV:
 
     def _publish_dynamic_objects(self) -> None:
         msg = autoware_perception_msgs.DetectedObjects()
-        msg.header.stamp = self._node.get_clock().now().to_msg()
+        # msg.header.stamp = self._node.get_clock().now().to_msg()
+        msg.header.stamp = self._convert_float_to_ros_time(
+            self._current_ros_time
+        ).to_msg()
         msg.header.frame_id = "map"
         try:
             for ag in self._agents:
@@ -823,7 +897,6 @@ class AutowarePureAV:
 
                 # 2. Classification
                 clas = autoware_perception_msgs.ObjectClassification()
-                # TODO: 根據 agent type 設定不同 label
                 clas.label = autoware_perception_msgs.ObjectClassification.CAR
                 clas.probability = 1.0
                 obj.classification = [clas]
@@ -854,7 +927,7 @@ class AutowarePureAV:
                     shp.height = ag.shape.dimensions[2]
 
                 obj.shape = shp
-
+                # print(obj.shape)
                 # 4. Kinematics
                 kin = autoware_perception_msgs.DetectedObjectKinematics()
 
@@ -887,13 +960,15 @@ class AutowarePureAV:
                 msg.objects.append(obj)
         except Exception as e:
             logger.error(f"Error publishing dynamic objects: {e}")
-
         self._objects_pub.publish(msg)
 
     def _publish_dummy_pointcloud(self) -> None:
         # Empty PointCloud2
         msg = sensor_msgs.PointCloud2()
-        msg.header.stamp = self._node.get_clock().now().to_msg()
+        # msg.header.stamp = self._node.get_clock().now().to_msg()
+        msg.header.stamp = self._convert_float_to_ros_time(
+            self._current_ros_time
+        ).to_msg()
         msg.header.frame_id = "base_link"
         msg.height = 1
         msg.width = 0
@@ -955,7 +1030,8 @@ class AutowarePureAV:
             logger.warning("No kinematic state skipping TF publish")
             return
 
-        now = self._node.get_clock().now().to_msg()
+        # now = self._node.get_clock().now().to_msg()
+        now = self._convert_float_to_ros_time(self._current_ros_time).to_msg()
 
         t = geometry_msgs.TransformStamped()
         t.header.stamp = now
@@ -977,13 +1053,15 @@ class AutowarePureAV:
         self, mode: int = autoware_vehicle_msgs.ControlModeReport.AUTONOMOUS
     ) -> None:
         msg = autoware_vehicle_msgs.ControlModeReport()
-        msg.stamp = self._node.get_clock().now().to_msg()
+        # msg.stamp = self._node.get_clock().now().to_msg()
+        msg.stamp = self._convert_float_to_ros_time(self._current_ros_time).to_msg()
         msg.mode = mode
         self._control_mode_pub.publish(msg)
 
     def _publish_gear_report(self) -> None:
         msg = autoware_vehicle_msgs.GearReport()
-        msg.stamp = self._node.get_clock().now().to_msg()
+        # msg.stamp = self._node.get_clock().now().to_msg()
+        msg.stamp = self._convert_float_to_ros_time(self._current_ros_time).to_msg()
         if self._current_gear is None:
             logger.warning("No gear command received, defaulting to DRIVE")
             self._current_gear = autoware_vehicle_msgs.GearCommand.DRIVE
@@ -992,13 +1070,17 @@ class AutowarePureAV:
 
     def _publish_steering_report(self) -> None:
         msg = autoware_vehicle_msgs.SteeringReport()
-        msg.stamp = self._node.get_clock().now().to_msg()
+        # msg.stamp = self._node.get_clock().now().to_msg()
+        msg.stamp = self._convert_float_to_ros_time(self._current_ros_time).to_msg()
         msg.steering_tire_angle = self._latest_control.lateral.steering_tire_angle
         self._steering_report_pub.publish(msg)
 
     def _publish_velocity_report(self) -> None:
         msg = autoware_vehicle_msgs.VelocityReport()
-        msg.header.stamp = self._node.get_clock().now().to_msg()
+        # msg.header.stamp = self._node.get_clock().now().to_msg()
+        msg.header.stamp = self._convert_float_to_ros_time(
+            self._current_ros_time
+        ).to_msg()
         msg.header.frame_id = "base_link"
         msg.longitudinal_velocity = self._latest_control.longitudinal.velocity
         msg.lateral_velocity = 0.0
@@ -1009,7 +1091,10 @@ class AutowarePureAV:
 
     def _publish_occupancy_grid(self) -> None:
         msg = nav_msgs.OccupancyGrid()
-        msg.header.stamp = self._node.get_clock().now().to_msg()
+        # msg.header.stamp = self._node.get_clock().now().to_msg()
+        msg.header.stamp = self._convert_float_to_ros_time(
+            self._current_ros_time
+        ).to_msg()
         msg.header.frame_id = "map"
 
         # 這裡可以根據需要填入實際的 occupancy grid 資料
@@ -1030,9 +1115,20 @@ class AutowarePureAV:
     # def _publish_imu(self) -> None:
     #     self._imu_pub.publish(self._imu_state)
 
+    def _publish_clock(self, t: float) -> None:
+        msg = rosgraph_msgs.Clock()
+        time = self._convert_float_to_ros_time(t)
+        msg.clock = time.to_msg()
+        self._clock_pub.publish(msg)
+
     # ------------------------------------------------------------------
     # helpers
     # ------------------------------------------------------------------
+    def _convert_float_to_ros_time(self, t: float) -> rclpy.time.Time:
+        sec = int(t)
+        nanosec = int((t - sec) * 1e9)
+        return rclpy.time.Time(seconds=sec, nanoseconds=nanosec)
+
     def _update_kinematic(self, kinematic: ObjectKinematic) -> None:
         self._prev_prev_kinematic = self._prev_kinematic
         self._prev_kinematic = self._kinematic
@@ -1111,7 +1207,10 @@ class AutowarePureAV:
         # 賦值
         self._imu_state.linear_acceleration = linear_acceleration
         self._imu_state.angular_velocity = angular_velocity
-        self._imu_state.header.stamp = self._node.get_clock().now().to_msg()
+        # self._imu_state.header.stamp = self._node.get_clock().now().to_msg()
+        self._imu_state.header.stamp = self._convert_float_to_ros_time(
+            self._current_ros_time
+        ).to_msg()
         self._imu_state.header.frame_id = "base_link"
 
     @staticmethod

@@ -30,6 +30,7 @@ class Manager:
         logger.info(f"Running scenario: {scenario_pack.name}")
         runner = Runner(
             plan_name=self.plan_name,
+            runtime_cfg=self.config.get("runtime", {}),
             sim_cfg=self.config["simulator"],
             av_cfg=self.config["av"],
             bridge_cfg=self.config["bridge"],

@@ -24,7 +24,7 @@
   <arg name="launch_control" default="true" description="launch control"/>
   <arg name="launch_api" default="true" description="launch api"/>
   <!-- Global parameters -->
-  <arg name="use_sim_time" default="false" description="use_sim_time"/>
+  <arg name="use_sim_time" default="true" description="use_sim_time"/>
   <!-- Vehicle -->
   <arg name="vehicle_id" default="$(env VEHICLE_ID default)" description="vehicle specific ID"/>
   <arg name="launch_vehicle_interface" default="false" description="launch vehicle interface"/>
