@@ -139,6 +139,24 @@ hello:
     launch_vehicle_interface:=false \
     system_run_mode:=planning_simulation \
     launch_system_monitor:=false \
-    launch_dummy_diag_publisher:=false \
+    launch_dummy_diag_publisher:=true \
     is_simulation:=true \
+    scenario_simulation:=true \
     use_sim_time:=true
+
+# hello:
+#   ros2 launch autoware_launch \
+#     planning_simulator.launch.xml \
+#     map_path:=/resources/osm \
+#     lanelet2_map_file:=e6mini_same.osm \
+#     vehicle_model:=sample_vehicle \
+#     sensor_model:=sample_sensor_kit \
+#     launch_sensing:=false \
+#     launch_localization:=false \
+#     launch_perception:=false \
+#     launch_vehicle_interface:=false \
+#     system_run_mode:=planning_simulation \
+#     launch_system_monitor:=false \
+#     launch_dummy_diag_publisher:=true \
+#     is_simulation:=true \
+

@@ -1,6 +1,6 @@
 services:
   autoware_dev:
-    image: es_auto
+    image: es_auto:latest
     container_name: sb_dev
     working_dir: /sbsvf
 

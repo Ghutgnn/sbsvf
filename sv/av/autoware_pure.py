@@ -16,7 +16,10 @@ import uuid
 import rclpy
 from rclpy.node import Node
 from rclpy.executors import MultiThreadedExecutor
-from rclpy.qos import QoSProfile, ReliabilityPolicy, DurabilityPolicy, HistoryPolicy
+
+# from rclpy.qos import QoSProfile, ReliabilityPolicy, DurabilityPolicy, HistoryPolicy
+from rclpy.qos import QoSProfile, QoSReliabilityPolicy, QoSDurabilityPolicy
+
 from tf2_ros import TransformBroadcaster
 
 import rosgraph_msgs.msg as rosgraph_msgs
@@ -70,7 +73,9 @@ class AutowarePureAV:
             launch_cfg.get("log_path", "/tmp/autoware_launch.log")
         )
 
-        self._dt = runtime_cfg.get("dt", 0.02)
+        self._dt = runtime_cfg.get("dt", 0.002)
+        if self._dt <= 0.0:
+            self._dt = 0.01  # default 100Hz
 
         data_cfg = self._autoware_cfg.get("data", {})
         self._data_path = Path(data_cfg.get("data_path", "/autoware_data"))
@@ -356,6 +361,7 @@ class AutowarePureAV:
         self._agents = obs[1:] if len(obs) > 1 else []
 
         # publish
+        # if self._sim_time_stamp - self._last_heavy_data_time >= 0.01:
         self._publish_tf()
         self._publish_control_mode()
         self._publish_gear_report()
@@ -365,13 +371,11 @@ class AutowarePureAV:
         self._publish_dynamic_objects()
         self._publish_occupancy_grid()
         self._publish_dummy_pointcloud()
-        time.sleep(0.001)  # allow some time for messages to be sent
-        self._publish_clock(self._current_ros_time)
+        # self._publish_occupancy_grid()
+        # self._publish_dummy_pointcloud()
+        self._last_heavy_data_time = self._sim_time_stamp
 
-        # if self._sim_time_stamp - self._last_heavy_data_time >= 0.1:
-        #     self._publish_occupancy_grid()
-        #     self._publish_dummy_pointcloud()
-        #     self._last_heavy_data_time = self._sim_time_stamp
+        self._publish_clock(self._current_ros_time)
 
         # wait for new control message
         last_stamp = self._latest_control.stamp
@@ -454,8 +458,7 @@ class AutowarePureAV:
         self._node = rclpy.create_node("autoware_av_adapter")
         self._executor = MultiThreadedExecutor()
         self._executor.add_node(self._node)
-        # duration = self._dt if self._dt > 0 else 0.01  # default 100Hz
-        duration = 0.01
+        duration = self._dt if self._dt > 0 else 0.01  # default 100Hz
         self._node.create_timer(duration, self._timer_callback)
 
         # QoS Profile
@@ -539,17 +542,14 @@ class AutowarePureAV:
         #     qos_profile,
         # )
 
+        qos = QoSProfile(depth=1)
+        qos.reliability = QoSReliabilityPolicy.BEST_EFFORT
+        qos.durability = QoSDurabilityPolicy.VOLATILE
         self._clock_pub = self._node.create_publisher(
             rosgraph_msgs.Clock,
             "/clock",
-            QoSProfile(
-                reliability=ReliabilityPolicy.RELIABLE,
-                durability=DurabilityPolicy.VOLATILE,
-                history=HistoryPolicy.KEEP_LAST,
-                depth=1,
-            ),
+            qos,
         )
-
         self._tf_broadcaster = TransformBroadcaster(self._node)
 
         # subscribers
@@ -595,15 +595,15 @@ class AutowarePureAV:
     def _spin(self) -> None:
         assert self._executor is not None
         # period = 1.0 / self._spin_rate_hz if self._spin_rate_hz > 0 else 0.01
-        while rclpy.ok() and self._node is not None:
-            try:
-                # self._executor.spin_once(timeout_sec=period)
-                self._executor.spin()
-            except Exception as e:  # noqa: BLE001
-                logger.error(f"AutowareAV executor error: {e}")
-                self._last_error = str(e)
-                self._quit_flag = True
-                break
+        # while rclpy.ok() and self._node is not None:
+        try:
+            # self._executor.spin_once(timeout_sec=period)
+            self._executor.spin()
+        except Exception as e:  # noqa: BLE001
+            logger.error(f"AutowareAV executor error: {e}")
+            self._last_error = str(e)
+            self._quit_flag = True
+            # break
 
     def _launch_autoware(self) -> None:
         launch_parts = [
@@ -679,9 +679,11 @@ class AutowarePureAV:
     # ------------------------------------------------------------------
     def _timer_callback(self):
         if not self._initialized:
-            # now = time.time()
             self._base_time += self._dt
             self._current_ros_time = self._base_time
+            self._kinematic.time = self._current_ros_time
+            self._update_kinematic(self._kinematic)
+            # if self._current_ros_time - self._last_heavy_data_time >= 0.01:
             self._publish_tf()
             self._publish_control_mode()
             self._publish_gear_report()
@@ -691,13 +693,10 @@ class AutowarePureAV:
             self._publish_dynamic_objects()
             self._publish_occupancy_grid()
             self._publish_dummy_pointcloud()
-
+            # self._publish_occupancy_grid()
+            # self._publish_imu()
+            # self._publish_dummy_pointcloud()
             self._publish_clock(self._current_ros_time)
-
-            # if now - self._last_heavy_data_time >= 0.1:
-            #     self._publish_occupancy_grid()
-            #     # self._publish_imu()
-            #     self._publish_dummy_pointcloud()
 
     def _on_control(self, msg: autoware_control_msgs.Control) -> None:
         self._latest_control = msg
@@ -728,7 +727,6 @@ class AutowarePureAV:
 
     def _call_initialize_localization(self, sps: ScenarioPack) -> None:
         assert self._node is not None
-        now = self._node.get_clock().now().to_msg()
         now = self._convert_float_to_ros_time(self._current_ros_time).to_msg()
 
         ipos = sps.ego.spawn.position

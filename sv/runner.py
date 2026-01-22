@@ -165,7 +165,7 @@ class Runner:
         dt = runtime_cfg.get("dt", -1)
         use_real_time = False
         if dt <= 0:  # use real-time stepping
-            dt = 0.01  # first step
+            dt = 0.001  # first step
             use_real_time = True
             prev = time()
         time_stamp = 0.0  # seconds
@@ -184,29 +184,30 @@ class Runner:
                     t = time()
                     dt = t - prev
                     prev = t
-
+                cur = time()
                 loop_start_time = time()
                 time_stamp += dt
                 raw_obs = self.sim.step(ctrl_for_sim, time_stamp)
-                # time_1 = time()
-                # print("Sim step time: ", time_1 - cur)
+                time_1 = time()
+                print("Sim step time: ", time_1 - cur)
                 obs_for_av = self.bridge.sim_to_av(raw_obs)
-                # time_2 = time()
-                # print("Bridge sim_to_av time: ", time_2 - time_1)
+                time_2 = time()
+                print("Bridge sim_to_av time: ", time_2 - time_1)
                 ctrl_from_av = self.av.step(obs_for_av, time_stamp)
-                # time_3 = time()
-                # print("AV step time: ", time_3 - time_2)
+                time_3 = time()
+                print("AV step time: ", time_3 - time_2)
                 ctrl_for_sim = self.bridge.av_to_sim(ctrl_from_av)
-                # time_4 = time()
-                # print("Bridge av_to_sim time: ", time_4 - time_3)
-                # time_need = time() - cur
-                # print("--------Step time: ", time_need)
-                # cur = time()
+                time_4 = time()
+                print("Bridge av_to_sim time: ", time_4 - time_3)
+                time_need = time() - cur
+                print("--------Step time: ", time_need)
+                cur = time()
                 # self.monitor.step(
 
-                loop_need_time = time() - loop_start_time
+                # loop_need_time = time() - loop_start_time
                 # sleep_time = dt - loop_need_time
                 # if sleep_time > 0:
+                #     print("Sleeping for ", sleep_time)
                 #     sleep(sleep_time)
 
             sim_time_need = time() - sim_start_time
