@@ -36,8 +36,8 @@
   <!-- System -->
   <arg name="system_run_mode" default="online" description="run mode in system"/>
   <arg name="launch_system_monitor" default="false" description="launch system monitor"/>
-  <arg name="launch_dummy_diag_publisher" default="false" description="launch dummy diag publisher"/>
-  <arg name="diagnostic_graph_aggregator_graph_path" default="$(find-pkg-share autoware_launch)/config/system/diagnostics/autoware-main.yaml" description="diagnostic graph config"/>
+  <arg name="launch_dummy_diag_publisher" default="true" description="launch dummy diag publisher"/>
+  <arg name="diagnostic_graph_aggregator_graph_path" default="$(find-pkg-share autoware_launch)/config/system/diagnostics/autoware-carla.yaml" description="diagnostic graph config"/>
   <!-- Tools -->
   <arg name="rviz" default="true" description="launch rviz"/>
   <arg name="rviz_config_name" default="autoware.rviz" description="rviz config name"/>
@@ -156,7 +156,7 @@
   </group>
 
   <!-- Tools -->
-  <group>
+  <group if="$(var rviz)">
     <node pkg="rviz2" exec="rviz2" name="rviz2" output="screen" args="-d $(var rviz_config) -s $(find-pkg-share autoware_launch)/rviz/image/autoware.png" if="$(var rviz)" respawn="$(var rviz_respawn)">
       <env name="QT_QPA_PLATFORMTHEME" value="qt5ct"/>
     </node>

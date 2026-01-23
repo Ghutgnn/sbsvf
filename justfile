@@ -141,7 +141,6 @@ hello:
     launch_system_monitor:=false \
     launch_dummy_diag_publisher:=true \
     is_simulation:=true \
-    scenario_simulation:=true \
     use_sim_time:=true
 
 # hello:

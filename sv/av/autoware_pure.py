@@ -322,7 +322,7 @@ class AutowarePureAV:
             logger.info("Changing Autoware to autonomous mode...")
 
             try:
-                input("Press Enter to change Autoware to autonomous mode...`")
+                # input("Press Enter to change Autoware to autonomous mode...")
                 self._call_change_to_autonomous()
             except RuntimeError as e:
                 self._quit_flag = True
@@ -376,6 +376,7 @@ class AutowarePureAV:
         self._last_heavy_data_time = self._sim_time_stamp
 
         self._publish_clock(self._current_ros_time)
+        # ros2 topic pub -r 50 /clock rosgraph_msgs/msg/Clock "{clock: 'now'}"
 
         # wait for new control message
         last_stamp = self._latest_control.stamp
@@ -594,10 +595,7 @@ class AutowarePureAV:
 
     def _spin(self) -> None:
         assert self._executor is not None
-        # period = 1.0 / self._spin_rate_hz if self._spin_rate_hz > 0 else 0.01
-        # while rclpy.ok() and self._node is not None:
         try:
-            # self._executor.spin_once(timeout_sec=period)
             self._executor.spin()
         except Exception as e:  # noqa: BLE001
             logger.error(f"AutowareAV executor error: {e}")
