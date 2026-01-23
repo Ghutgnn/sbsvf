@@ -101,10 +101,11 @@ class Vehicle:
             self._se.SE_SimpleVehicleGetState(self.sv_handle, ct.byref(self.vh_state))
 
         elif ctrl.mode == CtrlMode.VEL_STEER:
-            speed = ctrl.payload.get("speed", self.vh_state.speed)
-            h = ctrl.payload.get("h", self.vh_state.h)
-            self._se.SE_SimpleVehicleControlAnalog(self.sv_handle, dt, 0, h)
-            self._se.SE_SimpleVehicleSetSpeed(self.sv_handle, speed)
+            target_speed = ctrl.payload.get("speed", self.vh_state.speed)
+            heading_to_target = ctrl.payload.get("h", self.vh_state.h)
+            self._se.SE_SimpleVehicleControlTarget(
+                self.sv_handle, dt, target_speed, heading_to_target
+            )
             # Update vehicle state
             self._se.SE_SimpleVehicleGetState(self.sv_handle, ct.byref(self.vh_state))
 
@@ -235,12 +236,15 @@ class EsminiAdapter:
         ]
         se.SE_SimpleVehicleControlAnalog.restype = None
 
+        # SE_DLL_API void SE_SimpleVehicleControlTarget(void *handleSimpleVehicle, double dt, double target_speed, double heading_to_target);
         se.SE_SimpleVehicleControlTarget.argtypes = [
             ct.c_void_p,
             ct.c_double,
-            ct.c_float,
-            ct.c_float,
+            ct.c_double,
+            ct.c_double,
         ]
+        se.SE_SimpleVehicleControlTarget.restype = None
+
         se.SE_SimpleVehicleSetSpeed.argtypes = [ct.c_void_p, ct.c_float]
 
         se.SE_ReportObjectWheelStatus.argtypes = [ct.c_int, ct.c_float, ct.c_float]

@@ -35,10 +35,21 @@ import autoware_perception_msgs.msg as autoware_perception_msgs
 
 from sv.utils.position import Position
 from sv.utils.util import get_cfg
-from sv.utils.object import ObjectKinematic, ShapeType
+from sv.utils.object import ObjectKinematic, RoadObjectType, ShapeType
 from sv.registry import register_av
 from sv.utils.control import Ctrl, CtrlMode
 from sv.utils.sps import ScenarioPack
+
+OBJECT_TYPE_MAP = {
+    RoadObjectType.CAR: autoware_perception_msgs.ObjectClassification.CAR,
+    RoadObjectType.TRUCK: autoware_perception_msgs.ObjectClassification.TRUCK,
+    RoadObjectType.BUS: autoware_perception_msgs.ObjectClassification.BUS,
+    RoadObjectType.TRAILER: autoware_perception_msgs.ObjectClassification.TRAILER,
+    RoadObjectType.MOTORCYCLE: autoware_perception_msgs.ObjectClassification.MOTORCYCLE,
+    RoadObjectType.BICYCLE: autoware_perception_msgs.ObjectClassification.BICYCLE,
+    RoadObjectType.PEDESTRIAN: autoware_perception_msgs.ObjectClassification.PEDESTRIAN,
+}
+
 
 logger = logging.getLogger(__name__)
 
@@ -893,7 +904,9 @@ class AutowarePureAV:
 
                 # 2. Classification
                 clas = autoware_perception_msgs.ObjectClassification()
-                clas.label = autoware_perception_msgs.ObjectClassification.CAR
+                clas.label = OBJECT_TYPE_MAP.get(
+                    ag.type, autoware_perception_msgs.ObjectClassification.UNKNOWN
+                )
                 clas.probability = 1.0
                 obj.classification = [clas]
 
