@@ -72,15 +72,6 @@ class SESimpleVehicleState(ct.Structure):
     ]
 
 
-class SimulatorState(Enum):
-    INIT = auto()
-    AV_CONNECTING = auto()
-    WAITING_FOR_PLANNING = auto()
-    ENGAGING = auto()
-    RUNNING = auto()
-    STOPPED = auto()
-
-
 class Vehicle:
     """Internal helper class, only used inside Simulator."""
 
@@ -142,7 +133,7 @@ class EsminiAdapter:
         self, cfg_path: Union[str, Path], sps: ScenarioPack, runtime_cfg: dict
     ):
         self._time = 0.0
-        self.sim_state = SimulatorState.INIT
+        self._inited = False
         self.cfg = get_cfg(cfg_path)
         self.esmini_home = self.cfg.get("esmini_home", "/opt/esmini/")
         # self.obj_states = SEScenarioObjectState()
@@ -309,7 +300,8 @@ class EsminiAdapter:
         se.SE_SetDatFilePath.restype = None
 
     def init(self):
-        self.sim_state = SimulatorState.AV_CONNECTING
+        # self.sim_state = SimulatorState.AV_CONNECTING
+        pass
 
     def start(self, cfg: dict):
         pass
@@ -346,6 +338,8 @@ class EsminiAdapter:
             obj_id,
             self.ego_car.vh_state.speed,
         )
+
+        # Update object state
         for i in range(0, self.obj_count):
             obj_state = SEScenarioObjectState()
             se.SE_GetObjectState(se.SE_GetId(i), ct.byref(obj_state))
@@ -359,7 +353,8 @@ class EsminiAdapter:
             )
             self.objects[i].update(kinematic)
 
-        se.SE_StepDT(ct.c_float(dt))
+        se.SE_StepDT(dt)
+
         return self.objects
 
     def stop(self):
@@ -528,6 +523,7 @@ class EsminiAdapter:
             length=float(self.objects[0].shape.dimensions[0]),
             speed=float(self.objects[0].kinematic.speed),
         )
+        return self.objects
 
     # define a function returning if the simulator need to stop
     def should_quit(self):

@@ -151,13 +151,14 @@ class Runner:
         sps: ScenarioPack,
         params: Optional[dict[str, Any]] = None,
     ) -> None:
+        init_obs = None
         try:
-            self.sim.reset(sps, params)
+            init_obs = self.sim.reset(sps, params)
         except Exception as e:
             logger.error(f"Simulator reset failed: {e}")
             return
         try:
-            self.av.reset(sps, params)
+            self.av.reset(sps, init_obs)
         except Exception as e:
             logger.error(f"AV reset failed: {e}")
             return

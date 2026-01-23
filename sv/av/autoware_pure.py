@@ -35,7 +35,7 @@ import autoware_perception_msgs.msg as autoware_perception_msgs
 
 from sv.utils.position import Position
 from sv.utils.util import get_cfg
-from sv.utils.object import ObjectKinematic, RoadObjectType, ShapeType
+from sv.utils.object import ObjectKinematic, ObjectState, RoadObjectType, ShapeType
 from sv.registry import register_av
 from sv.utils.control import Ctrl, CtrlMode
 from sv.utils.sps import ScenarioPack
@@ -150,7 +150,7 @@ class AutowarePureAV:
         # self._motion_state: int = MotionState.UNKNOWN
         self._quit_flag: bool = False
         self._last_error: Optional[str] = None
-        self._agents: List[Any] = []
+        self._agents: List[ObjectState] = []
         # AutowarePureAV._instance_count += 1
 
     # ------------------------------------------------------------------
@@ -186,7 +186,9 @@ class AutowarePureAV:
         logger.info(f"Launching Autoware... (Current state: {self._vehicle_state})")
         logger.info("Autoware AV initialized and Autoware stack is ready.")
 
-    def reset(self, sps: ScenarioPack, params: Optional[dict] = None) -> None:
+    def reset(
+        self, sps: ScenarioPack, init_obs: Optional[list[ObjectState]] = None
+    ) -> None:
         """
         Reset AV internal state when simulator resets.
 
@@ -194,7 +196,6 @@ class AutowarePureAV:
         1. 如有換 map，就重啟 Autoware
         2. 用 AD API 設 initial pose / route
         """
-        params = params or {}
         self._ensure_ros_node()
 
         self._sps = sps
@@ -233,17 +234,21 @@ class AutowarePureAV:
         ipos = sps.ego.spawn.position
         ispeed = sps.ego.spawn.speed
 
-        init_kinematic = ObjectKinematic.from_dict(ipos.to_dict())
-        # init_kinematic.time = float(self._node.get_clock().now().nanoseconds) * 1e-9
+        # init_kinematic = ObjectKinematic.from_dict(ipos.to_dict())
+        # init_kinematic.time = self._current_ros_time
+
+        # # TODO: check position type consistency
+        # init_kinematic.yaw = (
+        #     ipos.h
+        # )  # Position type and VehicleKinematic yaw consistency
+
+        # # TODO: autoware init speed condition
+        # init_kinematic.speed = 0.0  # Autoware state change condition
+
+        init_kinematic = init_obs[0].kinematic
         init_kinematic.time = self._current_ros_time
 
-        # TODO: check position type consistency
-        init_kinematic.yaw = (
-            ipos.h
-        )  # Position type and VehicleKinematic yaw consistency
-
-        # TODO: autoware init speed condition
-        init_kinematic.speed = 0.0  # Autoware state change condition
+        self._agents = init_obs[1:] if init_obs and len(init_obs) > 1 else []
 
         self._update_kinematic(init_kinematic)
 
@@ -333,7 +338,7 @@ class AutowarePureAV:
             logger.info("Changing Autoware to autonomous mode...")
 
             try:
-                # input("Press Enter to change Autoware to autonomous mode...")
+                input("Press Enter to change Autoware to autonomous mode...")
                 self._call_change_to_autonomous()
             except RuntimeError as e:
                 self._quit_flag = True
