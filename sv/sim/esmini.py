@@ -339,6 +339,8 @@ class EsminiAdapter:
             self.ego_car.vh_state.speed,
         )
 
+        se.SE_StepDT(dt)
+
         # Update object state
         for i in range(0, self.obj_count):
             obj_state = SEScenarioObjectState()
@@ -352,8 +354,6 @@ class EsminiAdapter:
                 speed=float(obj_state.speed),
             )
             self.objects[i].update(kinematic)
-
-        se.SE_StepDT(dt)
 
         return self.objects
 
@@ -375,7 +375,6 @@ class EsminiAdapter:
             ptype = ct.c_int()
             param_name = self.se.SE_GetParameterName(i, ct.byref(ptype)).decode("utf-8")
             param_type[param_name] = ptype.value
-            # print(f"esmini parameter {i}: {param_name} (type {ptype.value})")
 
         for name, value in params.items():
             if name not in param_type:
@@ -389,7 +388,6 @@ class EsminiAdapter:
                 try:
                     v = int(value)
                 except (TypeError, ValueError):
-                    # print(f"  skip {name} = {value} (not an int)")
                     logger.warning(
                         f"Parameter {name} value {value} is not an int. Skip."
                     )
@@ -424,7 +422,6 @@ class EsminiAdapter:
                 self.se.SE_SetParameterBool(name.encode("utf-8"), v)
                 logger.info(f"  set {name} = {v}")
             else:
-                # print(f"  skip {name} = {value} (unknown parameter type {ptype})")
                 logger.warning(f"Parameter {name} has unknown type {ptype}. Skip.")
                 continue
 
@@ -515,6 +512,13 @@ class EsminiAdapter:
 
             self.objects.append(obj)
 
+        # Apply ego vehicle's init speed setting
+        self.objects[0].kinematic.speed = sps.ego.spawn.speed / 3.6  # km/h to m/s
+        self.se.SE_ReportObjectSpeed(
+            0,
+            self.objects[0].kinematic.speed,
+        )
+        # Create ego vehicle helper
         self.ego_car = Vehicle(
             self.se,
             x=float(self.objects[0].kinematic.x),

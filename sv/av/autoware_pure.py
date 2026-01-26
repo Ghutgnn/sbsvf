@@ -138,6 +138,7 @@ class AutowarePureAV:
         self._current_ros_time: float = 0.0  # = _base_time + _sim_time_stamp
         self._last_heavy_data_time: float = 0.0
         self._vehicle_state: Optional[int] = None
+        self._control_mode = autoware_vehicle_msgs.ControlModeReport.MANUAL
         self._current_gear: Optional[int] = None
         self._latest_control: autoware_control_msgs.Control = (
             autoware_control_msgs.Control()
@@ -228,11 +229,6 @@ class AutowarePureAV:
         self._kinematic = ObjectKinematic()
         self._prev_kinematic = ObjectKinematic()
         self._prev_prev_kinematic = ObjectKinematic()
-        # self._base_time = self._current_ros_time
-        # self._sim_time_stamp = 0.0
-        # self._current_ros_time = self._base_time
-        ipos = sps.ego.spawn.position
-        ispeed = sps.ego.spawn.speed
 
         # init_kinematic = ObjectKinematic.from_dict(ipos.to_dict())
         # init_kinematic.time = self._current_ros_time
@@ -247,7 +243,6 @@ class AutowarePureAV:
 
         init_kinematic = init_obs[0].kinematic
         init_kinematic.time = self._current_ros_time
-
         self._agents = init_obs[1:] if init_obs and len(init_obs) > 1 else []
 
         self._update_kinematic(init_kinematic)
@@ -336,9 +331,9 @@ class AutowarePureAV:
 
         if self._vehicle_state == autoware_system_msgs.AutowareState.WAITING_FOR_ENGAGE:
             logger.info("Changing Autoware to autonomous mode...")
-
             try:
-                input("Press Enter to change Autoware to autonomous mode...")
+                # input("Press Enter to change Autoware to autonomous mode...")
+                self._control_mode = autoware_vehicle_msgs.ControlModeReport.AUTONOMOUS
                 self._call_change_to_autonomous()
             except RuntimeError as e:
                 self._quit_flag = True
@@ -760,8 +755,6 @@ class AutowarePureAV:
         t.transform.rotation.z = qz
         t.transform.rotation.w = qw
 
-        # Send TF
-        self._tf_broadcaster.sendTransform(t)
 
         req = autoware_adapi_v1_msgs_srv.InitializeLocalization.Request()
         pose_msg = geometry_msgs.PoseWithCovarianceStamped()
@@ -1063,13 +1056,11 @@ class AutowarePureAV:
         # 發送 TF
         self._tf_broadcaster.sendTransform(t)
 
-    def _publish_control_mode(
-        self, mode: int = autoware_vehicle_msgs.ControlModeReport.AUTONOMOUS
-    ) -> None:
+    def _publish_control_mode(self) -> None:
         msg = autoware_vehicle_msgs.ControlModeReport()
         # msg.stamp = self._node.get_clock().now().to_msg()
         msg.stamp = self._convert_float_to_ros_time(self._current_ros_time).to_msg()
-        msg.mode = mode
+        msg.mode = self._control_mode
         self._control_mode_pub.publish(msg)
 
     def _publish_gear_report(self) -> None:
@@ -1096,7 +1087,7 @@ class AutowarePureAV:
             self._current_ros_time
         ).to_msg()
         msg.header.frame_id = "base_link"
-        msg.longitudinal_velocity = self._latest_control.longitudinal.velocity
+        msg.longitudinal_velocity = self._kinematic.speed
         msg.lateral_velocity = 0.0
         # TODO: 直接從sim拿 heading rate
         msg.heading_rate = self._imu_state.angular_velocity.z
