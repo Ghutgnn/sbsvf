@@ -42,30 +42,22 @@ class Runner:
             SIM_REGISTRY,
             name=sim_cfg["name"],
             cfg_path=sim_cfg.get("cfg_path", None),
-            sps=sps,
-            runtime_cfg=runtime_cfg,
         )
         self.av = build_instance_from_registry(
             AV_REGISTRY,
             name=av_cfg["name"],
             cfg_path=av_cfg.get("cfg_path", None),
-            sps=sps,
-            runtime_cfg=runtime_cfg,
         )
         self.bridge = build_instance_from_registry(
             BRIDGE_REGISTRY,
             name=bridge_cfg["name"],
             cfg_path=bridge_cfg.get("cfg_path", None),
-            sps=sps,
-            runtime_cfg=runtime_cfg,
         )
         self.monitor = build_instance_from_registry(
             MONITOR_REGISTRY,
             name=monitor_cfg["name"],
             cfg_path=monitor_cfg.get("cfg_path", None),
             plan_name=plan_name,
-            sps=sps,
-            runtime_cfg=runtime_cfg,
         )
         if self.sps.param_range_file is not None:
             logger.info("Parameter range file provided: %s", self.sps.param_range_file)
@@ -89,14 +81,14 @@ class Runner:
         try:
             # --- init ---
             try:
-                self.sim.init()
+                self.sim.init(self.sps)
                 sim_ok = True
             except Exception:
                 logger.exception("Simulator initialization failed")
                 return
 
             try:
-                self.av.init()
+                self.av.init(self.sps)
                 av_ok = True
             except Exception:
                 logger.exception("AV initialization failed")

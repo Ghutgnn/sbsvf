@@ -129,9 +129,7 @@ TYPE_MAP = {
 
 @register_sim("esmini")
 class EsminiAdapter:
-    def __init__(
-        self, cfg_path: Union[str, Path], sps: ScenarioPack, runtime_cfg: dict
-    ):
+    def __init__(self, cfg_path: Union[str, Path]):
         self._time = 0.0
         self._inited = False
         self.cfg = get_cfg(cfg_path)
@@ -299,7 +297,7 @@ class EsminiAdapter:
         se.SE_SetDatFilePath.argtypes = [ct.c_char_p]
         se.SE_SetDatFilePath.restype = None
 
-    def init(self):
+    def init(self, sps: ScenarioPack):
         # self.sim_state = SimulatorState.AV_CONNECTING
         pass
 
@@ -513,11 +511,11 @@ class EsminiAdapter:
             self.objects.append(obj)
 
         # Apply ego vehicle's init speed setting
-        self.objects[0].kinematic.speed = sps.ego.spawn.speed / 3.6  # km/h to m/s
-        self.se.SE_ReportObjectSpeed(
-            0,
-            self.objects[0].kinematic.speed,
-        )
+        # self.objects[0].kinematic.speed = sps.ego.spawn.speed / 3.6  # km/h to m/s
+        # self.se.SE_ReportObjectSpeed(
+        #     0,
+        #     self.objects[0].kinematic.speed,
+        # )
         # Create ego vehicle helper
         self.ego_car = Vehicle(
             self.se,

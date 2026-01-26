@@ -40,6 +40,10 @@ from sv.registry import register_av
 from sv.utils.control import Ctrl, CtrlMode
 from sv.utils.sps import ScenarioPack
 
+
+CLOCK_PUB_HZ = 100.0  # Hz
+
+# Mapping from RoadObjectType to Autoware's ObjectClassification
 OBJECT_TYPE_MAP = {
     RoadObjectType.CAR: autoware_perception_msgs.ObjectClassification.CAR,
     RoadObjectType.TRUCK: autoware_perception_msgs.ObjectClassification.TRUCK,
@@ -58,18 +62,18 @@ logger = logging.getLogger(__name__)
 class AutowarePureAV:
     """
     Autoware AV adapter:
-    - init(): 啟 Autoware (subprocess) + 建 ROS node、pub/sub、services
-    - reset(): 用 AD API 設 initial pose + route + 切 autonomous
-    - step(): 送 obs（ego + agents），等待新控制，轉成 Ctrl 回 simulator
-    - stop(): 關掉 Autoware process + ROS node
-    - should_quit(): 依 motion state / error / process 狀態決定是否結束
+    - init(): Launch Autoware (subprocess) + create ROS node, pub/sub, services
+    - reset(): Set initial pose + route via AD API services
+    - step(): Send obs (ego + agents), wait for new control, convert to Ctrl to return to simulator
+    - stop(): Stop Autoware process + ROS node
+    - should_quit(): Decide whether to quit based on motion state / error / process status
     """
 
-    def __init__(self, cfg_path: Path, sps: Any, runtime_cfg: dict):
+    def __init__(self, cfg_path: Path):
         cfg = get_cfg(Path(cfg_path))
         self._autoware_cfg = cfg.get("autoware", {})
 
-        # —— Autoware 啟動相關設定 ——
+        # —— Autoware Launch Settings ——
         self._root = Path(self._autoware_cfg.get("root", "/autoware"))
         self._ros_setup_script = self._autoware_cfg.get(
             "ros_setup_script", "/opt/ros/humble/setup.bash"
@@ -84,10 +88,6 @@ class AutowarePureAV:
             launch_cfg.get("log_path", "/tmp/autoware_launch.log")
         )
 
-        self._dt = runtime_cfg.get("dt", 0.002)
-        if self._dt <= 0.0:
-            self._dt = 0.01  # default 100Hz
-
         data_cfg = self._autoware_cfg.get("data", {})
         self._data_path = Path(data_cfg.get("data_path", "/autoware_data"))
 
@@ -95,18 +95,15 @@ class AutowarePureAV:
         self._vehicle_model = veh_cfg.get("model", "sample_vehicle")
         self._sensor_model = veh_cfg.get("sensor_model", "sample_sensor_kit")
 
-        rt_cfg = self._autoware_cfg.get("runtime", {})
-        self._timeout_sec = float(rt_cfg.get("timeout_sec", 30.0))
-        self._control_timeout_sec = float(rt_cfg.get("control_timeout_sec", 0.1))
-        # self._spin_rate_hz = float(rt_cfg.get("spin_rate_hz", 100.0))
+        self._rt_cfg = self._autoware_cfg.get("runtime", {})
+        self._timeout_sec = float(self._rt_cfg.get("timeout_sec", 30.0))
+        self._control_timeout_sec = float(self._rt_cfg.get("control_timeout_sec", 0.1))
 
         # ScenarioPack
-        self._sps: Optional[ScenarioPack] = sps
-        self._current_map_path: Optional[Path] = None
-        self._map_base_path: Optional[Path] = None
-        self._lanelet2_map_file: Optional[Path] = None
+        self._sps: Optional[ScenarioPack] = None
+        self._map_path: Optional[Path] = None
 
-        # —— Autoware process & ROS node 狀態 ——
+        # —— Autoware process & ROS node status ——
         self._autoware_proc: Optional[subprocess.Popen] = None
         self._node: Optional[Node] = None
         self._executor: Optional[MultiThreadedExecutor] = None
@@ -122,7 +119,6 @@ class AutowarePureAV:
         self._steering_report_pub = None
         self._velocity_report_pub = None
         self._occupancy_grid_pub = None
-        # self._imu_pub = None
         self._tf_broadcaster = None
         self._control_sub = None
         self._gear_cmd_sub = None
@@ -131,15 +127,19 @@ class AutowarePureAV:
         self._client_set_route_points = None
         self._client_change_to_auto = None
 
-        # 狀態
+        # Adapter internal state
         self._initialized: bool = False
         self._base_time: float = 0.0  # time at sim_time = 0.0 (seconds)
         self._sim_time_stamp: float = 0.0  # time at current sim step (seconds)
-        self._current_ros_time: float = 0.0  # = _base_time + _sim_time_stamp
+        self._current_ros_time: float = (
+            0.0  # _current_ros_time = _base_time + _sim_time_stamp
+        )
         self._last_heavy_data_time: float = 0.0
         self._vehicle_state: Optional[int] = None
-        self._control_mode = autoware_vehicle_msgs.ControlModeReport.MANUAL
-        self._current_gear: Optional[int] = None
+        self._control_mode: Optional[int] = (
+            autoware_vehicle_msgs.ControlModeReport.NO_COMMAND
+        )
+        self._current_gear: Optional[int] = autoware_vehicle_msgs.GearCommand.NONE
         self._latest_control: autoware_control_msgs.Control = (
             autoware_control_msgs.Control()
         )
@@ -148,27 +148,25 @@ class AutowarePureAV:
         self._prev_kinematic: ObjectKinematic = ObjectKinematic()
         self._prev_prev_kinematic: ObjectKinematic = ObjectKinematic()
         self._imu_state = sensor_msgs.Imu()
-        # self._motion_state: int = MotionState.UNKNOWN
         self._quit_flag: bool = False
         self._last_error: Optional[str] = None
         self._agents: List[ObjectState] = []
-        # AutowarePureAV._instance_count += 1
 
     # ------------------------------------------------------------------
     # lifecycle
     # ------------------------------------------------------------------
-    def init(self) -> None:
+    def init(self, sps: ScenarioPack) -> None:
         """
         - ROS node + spin thread
         - Launch Autoware (subprocess)
         - Wait for API services ready
         """
 
+        self._setup_sps(sps)
+
         rclpy.init()
         self._ensure_ros_node()
 
-        self._current_map_path = self._resolve_map_path(self._sps)
-        # input("press enter to launch autoware with map: " + str(map_path))
         self._launch_autoware()
 
         # 等待 AD API services ready
@@ -199,17 +197,14 @@ class AutowarePureAV:
         """
         self._ensure_ros_node()
 
-        self._sps = sps
-
         # If the map has changed, restart Autoware process
-        new_map_path = self._resolve_map_path(sps)
-        if self._current_map_path is None or new_map_path != self._current_map_path:
+        map_changed = self._setup_sps(sps)
+        if map_changed:
             logger.info(
-                f"Scenario uses new map_path={new_map_path}, restarting Autoware..."
+                f"Scenario uses new map_path={self._map_path}, restarting Autoware..."
             )
             self._stop_autoware_process()
             self._launch_autoware()
-            self._current_map_path = new_map_path
 
             self._wait_for_service(
                 self._client_initial_localization, "InitializeLocalization"
@@ -220,11 +215,11 @@ class AutowarePureAV:
         # 清 internal state
         self._latest_control = autoware_control_msgs.Control()
         self._latest_control_stamp = None
-        # self._motion_state = MotionState.UNKNOWN
-        self._current_gear = None
+        self._control_mode = autoware_vehicle_msgs.ControlModeReport.NO_COMMAND
+        self._current_gear = autoware_vehicle_msgs.GearCommand.NONE
         self._quit_flag = False
         self._last_error = None
-        # self._imu_state = sensor_msgs.Imu()
+        self._sim_time_stamp = 0.0
 
         self._kinematic = ObjectKinematic()
         self._prev_kinematic = ObjectKinematic()
@@ -240,6 +235,8 @@ class AutowarePureAV:
 
         # # TODO: autoware init speed condition
         # init_kinematic.speed = 0.0  # Autoware state change condition
+
+        # if init_obs is None or len(init_obs) == 0:
 
         init_kinematic = init_obs[0].kinematic
         init_kinematic.time = self._current_ros_time
@@ -279,7 +276,7 @@ class AutowarePureAV:
             f"Setting Autoware route points... (Current state: {self._vehicle_state})"
         )
         try:
-            self._call_set_route_points(sps, self._autoware_cfg.get("runtime", {}))
+            self._call_set_route_points(sps)
         except RuntimeError as e:
             self._quit_flag = True
             self._last_error = str(e)
@@ -320,6 +317,7 @@ class AutowarePureAV:
         self._sim_time_stamp = time_stamp
         self._current_ros_time = self._base_time + self._sim_time_stamp
 
+        # Check Autoware vehicle state
         if (
             self._vehicle_state != autoware_system_msgs.AutowareState.WAITING_FOR_ENGAGE
             and self._vehicle_state != autoware_system_msgs.AutowareState.DRIVING
@@ -329,6 +327,7 @@ class AutowarePureAV:
             )
             return Ctrl(mode=CtrlMode.None_)
 
+        # First step: change to autonomous mode
         if self._vehicle_state == autoware_system_msgs.AutowareState.WAITING_FOR_ENGAGE:
             logger.info("Changing Autoware to autonomous mode...")
             try:
@@ -361,13 +360,12 @@ class AutowarePureAV:
             self._initialized = True
             logger.info("Autoware is running...")
 
+        # Update ego's kinematic state
         ego = obs[0]
         if ego is not None:
             cur_kinematic = ego.kinematic
             cur_kinematic.time = self._current_ros_time
             self._update_kinematic(cur_kinematic)
-        else:
-            logger.debug("AutowareAV.step called without 'ego' state in obs")
 
         self._agents = obs[1:] if len(obs) > 1 else []
 
@@ -452,11 +450,6 @@ class AutowarePureAV:
             logger.info("Autoware process has exited unexpectedly.")
             return True
 
-        # scenario 執行完成（粗略判準）
-        # if self._ever_moving and self._motion_state == MotionState.STOPPED:
-        #     logger.info("Scenario execution completed: vehicle stopped after moving.")
-        #     return True
-
         return False
 
     # ------------------------------------------------------------------
@@ -470,31 +463,11 @@ class AutowarePureAV:
         self._node = rclpy.create_node("autoware_av_adapter")
         self._executor = MultiThreadedExecutor()
         self._executor.add_node(self._node)
-        duration = self._dt if self._dt > 0 else 0.01  # default 100Hz
-        self._node.create_timer(duration, self._timer_callback)
+        self._node.create_timer(1.0 / CLOCK_PUB_HZ, self._timer_callback)
 
-        # QoS Profile
-        # qos_profile = QoSProfile(
-        #     reliability=ReliabilityPolicy.BEST_EFFORT,  # 關鍵：允許掉包，相容 Autoware 的設定
-        #     durability=DurabilityPolicy.VOLATILE,
-        #     history=HistoryPolicy.KEEP_LAST,
-        #     depth=10,
-        # )
         qos_profile = 10
 
         # publishers
-        # self._pub_initialpose3d = self._node.create_publisher(
-        #     geometry_msgs.PoseWithCovarianceStamped,
-        #     "/initialpose3d",
-        #     qos_profile,
-        # )
-
-        # self._init_state_pub = self._node.create_publisher(
-        #     LocalizationInitializationState,
-        #     "/localization/initialization_state",
-        #     qos_profile,
-        # )
-
         self._kinematic_state_pub = self._node.create_publisher(
             nav_msgs.Odometry,
             "/localization/kinematic_state",
@@ -547,12 +520,6 @@ class AutowarePureAV:
             "/perception/occupancy_grid_map/map",
             qos_profile,
         )
-
-        # self._imu_pub = self._node.create_publisher(
-        #     sensor_msgs.Imu,
-        #     "/sensing/imu/imu_data",
-        #     qos_profile,
-        # )
 
         qos = QoSProfile(depth=1)
         qos.reliability = QoSReliabilityPolicy.BEST_EFFORT
@@ -619,8 +586,8 @@ class AutowarePureAV:
             f"cd {self._root}",
             f"source {self._ros_setup_script}",
             f"""ros2 launch {self._launch_package} {self._launch_file} \
-            map_path:={self._map_base_path} \
-            lanelet2_map_file:={self._lanelet2_map_file} \
+            map_path:={self._map_path.parent} \
+            lanelet2_map_file:={self._map_path.name} \
             data_path:={self._data_path} \
             vehicle_model:={self._vehicle_model} \
             sensor_model:={self._sensor_model} \
@@ -688,7 +655,7 @@ class AutowarePureAV:
     # ------------------------------------------------------------------
     def _timer_callback(self):
         if not self._initialized:
-            self._base_time += self._dt
+            self._base_time += 1.0 / CLOCK_PUB_HZ
             self._current_ros_time = self._base_time
             self._kinematic.time = self._current_ros_time
             self._update_kinematic(self._kinematic)
@@ -738,23 +705,19 @@ class AutowarePureAV:
         assert self._node is not None
         now = self._convert_float_to_ros_time(self._current_ros_time).to_msg()
 
-        ipos = sps.ego.spawn.position
-        ispeed = sps.ego.spawn.speed
-
         t = geometry_msgs.TransformStamped()
         t.header.stamp = now
         t.header.frame_id = "map"
         t.child_frame_id = "base_link"
 
-        t.transform.translation.x = float(ipos.x)
-        t.transform.translation.y = float(ipos.y)
-        t.transform.translation.z = float(ipos.z)
+        t.transform.translation.x = float(self._kinematic.x)
+        t.transform.translation.y = float(self._kinematic.y)
+        t.transform.translation.z = float(self._kinematic.z)
 
         # Euler angle to quaternion
-        qz, qw = self._yaw_to_quat(ipos.h)
+        qz, qw = self._yaw_to_quat(self._kinematic.yaw)
         t.transform.rotation.z = qz
         t.transform.rotation.w = qw
-
 
         req = autoware_adapi_v1_msgs_srv.InitializeLocalization.Request()
         pose_msg = geometry_msgs.PoseWithCovarianceStamped()
@@ -762,13 +725,13 @@ class AutowarePureAV:
         pose_msg.header.stamp = now
         pose_msg.header.frame_id = "map"
 
-        pose_msg.pose.pose.position.x = float(ipos.x)
-        pose_msg.pose.pose.position.y = float(ipos.y)
-        pose_msg.pose.pose.position.z = float(ipos.z)
+        pose_msg.pose.pose.position.x = float(self._kinematic.x)
+        pose_msg.pose.pose.position.y = float(self._kinematic.y)
+        pose_msg.pose.pose.position.z = float(self._kinematic.z)
         logger.info(
-            f"Setting initial position: x={ipos.x}, y={ipos.y}, z={ipos.z}, h={ipos.h}, speed={ispeed}"
+            f"Setting initial position: x={self._kinematic.x}, y={self._kinematic.y}, z={self._kinematic.z}, h={self._kinematic.yaw}, speed={self._kinematic.speed}"
         )
-        qz, qw = self._yaw_to_quat(ipos.h)
+        qz, qw = self._yaw_to_quat(self._kinematic.yaw)
         pose_msg.pose.pose.orientation.z = qz
         pose_msg.pose.pose.orientation.w = qw
 
@@ -792,7 +755,7 @@ class AutowarePureAV:
 
         logger.debug("Called InitializeLocalization service.")
 
-    def _call_set_route_points(self, sps: ScenarioPack, params: Dict[str, Any]) -> None:
+    def _call_set_route_points(self, sps: ScenarioPack) -> None:
         assert self._node is not None
 
         req = autoware_adapi_v1_msgs_srv.SetRoutePoints.Request()
@@ -816,7 +779,7 @@ class AutowarePureAV:
         req.waypoints = []
 
         req.option.allow_goal_modification = bool(
-            params.get("allow_goal_modification", False)
+            self._rt_cfg.get("allow_goal_modification", False)
         )
 
         fut = self._client_set_route_points.call_async(req)
@@ -856,19 +819,16 @@ class AutowarePureAV:
         # now = self._node.get_clock().now().to_msg()
         now = self._convert_float_to_ros_time(self._current_ros_time).to_msg()
 
-        ego = self._kinematic
-
         # ODOMETRY
         msg = nav_msgs.Odometry()
         msg.header.stamp = now
         msg.header.frame_id = "map"
         msg.child_frame_id = "base_link"
 
-        msg.pose.pose.position.x = ego.x
-        msg.pose.pose.position.y = ego.y
-        msg.pose.pose.position.z = ego.z
+        msg.pose.pose.position.x = self._kinematic.x
+        msg.pose.pose.position.y = self._kinematic.y
+        msg.pose.pose.position.z = self._kinematic.z
 
-        # yaw = float(ego.get("yaw", 0.0))
         yaw = self._kinematic.yaw
         qz, qw = self._yaw_to_quat(yaw)
         msg.pose.pose.orientation.z = qz
@@ -892,81 +852,77 @@ class AutowarePureAV:
         msg.header.stamp = self._convert_float_to_ros_time(
             self._current_ros_time
         ).to_msg()
+
         msg.header.frame_id = "map"
-        try:
-            for ag in self._agents:
-                obj = autoware_perception_msgs.DetectedObject()
 
-                # 1. existence_probability
-                obj.existence_probability = 1.0
+        for ag in self._agents:
+            obj = autoware_perception_msgs.DetectedObject()
 
-                # 2. Classification
-                clas = autoware_perception_msgs.ObjectClassification()
-                clas.label = OBJECT_TYPE_MAP.get(
-                    ag.type, autoware_perception_msgs.ObjectClassification.UNKNOWN
-                )
-                clas.probability = 1.0
-                obj.classification = [clas]
+            # 1. existence_probability
+            obj.existence_probability = 1.0
 
-                # 3. Shape
-                shp = autoware_perception_msgs.Shape()
+            # 2. Classification
+            clas = autoware_perception_msgs.ObjectClassification()
+            clas.label = OBJECT_TYPE_MAP.get(
+                ag.type, autoware_perception_msgs.ObjectClassification.UNKNOWN
+            )
+            clas.probability = 1.0
+            obj.classification = [clas]
 
-                if ag.shape.type == ShapeType.CYLINDER:
-                    shp.type = autoware_perception_msgs.Shape.CYLINDER
-                elif ag.shape.type == ShapeType.BOUNDING_BOX:
-                    shp.type = autoware_perception_msgs.Shape.BOUNDING_BOX
-                elif ag.shape.type == ShapeType.POLYGON:
-                    shp.type = autoware_perception_msgs.Shape.POLYGON
-                else:
-                    raise ValueError(f"Unknown shape type: {ag.shape.type}")
+            # 3. Shape
+            shp = autoware_perception_msgs.Shape()
 
-                if ag.shape.type != ShapeType.POLYGON:
-                    shp.dimensions.x = ag.shape.dimensions[0]
-                    shp.dimensions.y = ag.shape.dimensions[1]
-                    shp.dimensions.z = ag.shape.dimensions[2]
-                else:
-                    for pt in ag.shape.polygon:
-                        p = geometry_msgs.Point32()
-                        p.x = pt[0]
-                        p.y = pt[1]
-                        p.z = pt[2]
-                        shp.footprint.points.append(p)
-                    shp.height = ag.shape.dimensions[2]
+            if ag.shape.type == ShapeType.CYLINDER:
+                shp.type = autoware_perception_msgs.Shape.CYLINDER
+            elif ag.shape.type == ShapeType.BOUNDING_BOX:
+                shp.type = autoware_perception_msgs.Shape.BOUNDING_BOX
+            elif ag.shape.type == ShapeType.POLYGON:
+                shp.type = autoware_perception_msgs.Shape.POLYGON
+            else:
+                raise ValueError(f"Unknown shape type: {ag.shape.type}")
 
-                obj.shape = shp
-                # print(obj.shape)
-                # 4. Kinematics
-                kin = autoware_perception_msgs.DetectedObjectKinematics()
+            if ag.shape.type != ShapeType.POLYGON:
+                shp.dimensions.x = ag.shape.dimensions[0]
+                shp.dimensions.y = ag.shape.dimensions[1]
+                shp.dimensions.z = ag.shape.dimensions[2]
+            else:
+                for pt in ag.shape.polygon:
+                    p = geometry_msgs.Point32()
+                    p.x = pt[0]
+                    p.y = pt[1]
+                    p.z = pt[2]
+                    shp.footprint.points.append(p)
+                shp.height = ag.shape.dimensions[2]
 
-                kin.orientation_availability = (
-                    2  # (0:UNAVAILABLE, 1:SIGN_UNKNOWN, 2:AVAILABLE)
-                )
-                kin.has_position_covariance = False
+            obj.shape = shp
 
-                # Pose
-                kin.pose_with_covariance.pose.position.x = ag.kinematic.x
-                kin.pose_with_covariance.pose.position.y = ag.kinematic.y
-                kin.pose_with_covariance.pose.position.z = ag.kinematic.z
+            # 4. Kinematics
+            kin = autoware_perception_msgs.DetectedObjectKinematics()
 
-                # qz, qw = self._yaw_to_quat(float(ag.get("yaw", 0.0)))
-                qz, qw = self._yaw_to_quat(ag.kinematic.yaw)
-                kin.pose_with_covariance.pose.orientation.z = qz
-                kin.pose_with_covariance.pose.orientation.w = qw
+            kin.orientation_availability = (
+                2  # (0:UNAVAILABLE, 1:SIGN_UNKNOWN, 2:AVAILABLE)
+            )
+            kin.has_position_covariance = False
 
-                # Twist
-                kin.has_twist = True
-                # TODO: Agent's twist calculation
-                kin.has_twist_covariance = False
-                agent_speed = ag.kinematic.speed
-                kin.twist_with_covariance.twist.linear.x = agent_speed
+            # Pose
+            kin.pose_with_covariance.pose.position.x = ag.kinematic.x
+            kin.pose_with_covariance.pose.position.y = ag.kinematic.y
+            kin.pose_with_covariance.pose.position.z = ag.kinematic.z
 
-                # 賦值
-                obj.kinematics = kin
+            qz, qw = self._yaw_to_quat(ag.kinematic.yaw)
+            kin.pose_with_covariance.pose.orientation.z = qz
+            kin.pose_with_covariance.pose.orientation.w = qw
 
-                # 加入列表
-                msg.objects.append(obj)
-        except Exception as e:
-            logger.error(f"Error publishing dynamic objects: {e}")
+            # Twist
+            kin.has_twist = True
+            # TODO: Agent's twist calculation
+            kin.has_twist_covariance = False
+            agent_speed = ag.kinematic.speed
+            kin.twist_with_covariance.twist.linear.x = agent_speed
+
+            obj.kinematics = kin
+            msg.objects.append(obj)
+
         self._objects_pub.publish(msg)
 
     def _publish_dummy_pointcloud(self) -> None:
@@ -1017,21 +973,6 @@ class AutowarePureAV:
         msg.data = b""
         self._dummy_pointcloud_pub.publish(msg)
 
-    # def _publish_initialization_state(self, state: int = None) -> None:
-    #     msg = LocalizationInitializationState()
-
-    #     # 這裡有兩個重點欄位：
-    #     # 1. stamp: 當下時間
-    #     msg.stamp = self._node.get_clock().now().to_msg()
-
-    #     # 2. state: 告訴它已經初始化完成 (3 = INITIALIZED)
-    #     # 定義在: autoware_adapi_v1_msgs/msg/LocalizationInitializationState.msg
-    #     # UNKNOWN = 0, UNINITIALIZED = 1, INITIALIZING = 2, INITIALIZED = 3
-    #     # msg.state = LocalizationInitializationState.INITIALIZED
-    #     msg.state = state or LocalizationInitializationState.INITIALIZED
-    #     logger.info("Publishing LocalizationInitializationState: INITIALIZED")
-    #     self._init_state_pub.publish(msg)
-
     def _publish_tf(self) -> None:
         if self._kinematic is None:
             logger.warning("No kinematic state skipping TF publish")
@@ -1053,7 +994,7 @@ class AutowarePureAV:
             self._kinematic.yaw
         )
 
-        # 發送 TF
+        # publish
         self._tf_broadcaster.sendTransform(t)
 
     def _publish_control_mode(self) -> None:
@@ -1067,9 +1008,6 @@ class AutowarePureAV:
         msg = autoware_vehicle_msgs.GearReport()
         # msg.stamp = self._node.get_clock().now().to_msg()
         msg.stamp = self._convert_float_to_ros_time(self._current_ros_time).to_msg()
-        if self._current_gear is None:
-            logger.warning("No gear command received, defaulting to DRIVE")
-            self._current_gear = autoware_vehicle_msgs.GearCommand.DRIVE
         msg.report = self._current_gear
         self._gear_report_pub.publish(msg)
 
@@ -1117,9 +1055,6 @@ class AutowarePureAV:
 
         self._occupancy_grid_pub.publish(msg)
 
-    # def _publish_imu(self) -> None:
-    #     self._imu_pub.publish(self._imu_state)
-
     def _publish_clock(self, t: float) -> None:
         msg = rosgraph_msgs.Clock()
         time = self._convert_float_to_ros_time(t)
@@ -1140,25 +1075,34 @@ class AutowarePureAV:
         self._kinematic = kinematic
         self._calc_imu_state()
 
-    def _resolve_map_path(self, sps: ScenarioPack) -> Path:
+    def _setup_sps(self, sps: ScenarioPack) -> bool:
         """
-        根據 ScenarioPack / cfg 決定 map_path:
-        1) 從sps.maps取得.osm file path (若有)
-        2) 拆解成絕對路徑(map_path + lanelet2_map_file)
+        Update map path from ScenarioPack.
+        Return True if map path has changed.
         """
-        full_path = Path(sps.maps.get("osm"))
-        if not full_path.exists():
-            raise FileNotFoundError(f"Autoware map file not found: {full_path}")
 
-        if full_path.suffix.lower() != ".osm":
-            raise ValueError(f"Autoware map file must be .osm format, got: {full_path}")
+        # Update sps
+        self._sps = sps
 
-        self._map_base_path = full_path.parent
-        self._lanelet2_map_file = full_path.name
+        # Map path
+        map_full_path = Path(sps.maps.get("osm"))
+        if not map_full_path.exists():
+            raise FileNotFoundError(f"Autoware map file not found: {map_full_path}")
 
-        return full_path
+        if map_full_path.suffix.lower() != ".osm":
+            raise ValueError(
+                f"Autoware map file must be .osm format, got: {map_full_path}"
+            )
 
-    def _calc_imu_state(self):
+        # Check if changed
+        is_changed = self._map_path != map_full_path
+
+        # Update map path
+        self._map_path = map_full_path
+
+        return is_changed
+
+    def _calc_imu_state(self) -> None:
         """根據 kinematic 計算 IMU 狀態
         修正重點：
         1. Y軸變數修正
@@ -1220,12 +1164,12 @@ class AutowarePureAV:
 
     @staticmethod
     def _yaw_to_quat(yaw: float) -> tuple[float, float]:
-        """回傳 (z, w)，假設 roll=pitch=0"""
+        """Supposing roll=pitch=0, return quaternion z,w from yaw"""
         cy = math.cos(yaw * 0.5)
         sy = math.sin(yaw * 0.5)
         return sy, cy
 
     @staticmethod
     def _quat_to_yaw(q) -> float:
-        """假設 roll=pitch=0，從 quaternion 回傳 yaw"""
+        """Supposing roll=pitch=0, return yaw from quaternion"""
         return math.atan2(2.0 * q.w * q.z, 1.0 - 2.0 * q.z * q.z)

@@ -5,13 +5,12 @@ from sv.utils.sps import ScenarioPack
 
 @register_monitor("default")
 class defaultMonitor:
-    def __init__(
-        self, cfg_path: dict, plan_name: str, sps: ScenarioPack, runtime_cfg: dict
-    ) -> None:
-        self.plan_name = plan_name
-        self.scenario_name = sps.name
-        self.record_type = ["rosbag", "video", "state"]
-        self.output_dir = f"artifacts/{plan_name}/{sps.name}/"
+    def __init__(self, cfg_path: dict, plan_name: str) -> None:
+        pass
+        # self.plan_name = plan_name
+        # self.scenario_name = sps.name
+        # self.record_type = ["rosbag", "video", "state"]
+        # self.output_dir = f"artifacts/{plan_name}/{sps.name}/"
 
     def on_tick(
         self,

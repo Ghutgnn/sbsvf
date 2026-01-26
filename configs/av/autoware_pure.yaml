@@ -24,7 +24,4 @@ autoware:
   runtime:
     timeout_sec: 100.0
     control_timeout_sec: 0.03
-    spin_rate_hz: 100.0
     allow_goal_modification: true
-    # publish_objects: true
-    # use_dynamic_objects_topic: true

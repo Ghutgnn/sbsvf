@@ -7,7 +7,7 @@ from sv.utils.sps import ScenarioPack
 
 @register_bridge("none")
 class NoneBridge:
-    def __init__(self, cfg_path: dict, sps: ScenarioPack, runtime_cfg: dict):
+    def __init__(self, cfg_path: dict):
         pass
 
     def sim_to_av(self, raw: dict[str, Any]) -> dict[str, Any]:  # RawObs -> Obs
