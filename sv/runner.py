@@ -182,6 +182,7 @@ class Runner:
                 loop_start_time = time()
 
                 time_stamp += dt
+                # print(f"Sim time: {time_stamp:.3f} sec", end="  \r")
                 raw_obs = self.sim.step(ctrl_for_sim, time_stamp)
                 obs_for_av = self.bridge.sim_to_av(raw_obs)
                 ctrl_from_av = self.av.step(obs_for_av, time_stamp)
@@ -193,7 +194,7 @@ class Runner:
                 # loop_need_time = time() - loop_start_time
                 # sleep_time = dt - loop_need_time
                 # if sleep_time > 0:
-                #     print("Sleeping for ", sleep_time)
+                #     # print("Sleeping for ", sleep_time)
                 #     sleep(sleep_time)
 
                 print(

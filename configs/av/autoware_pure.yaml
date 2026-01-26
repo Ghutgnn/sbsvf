@@ -23,5 +23,5 @@ autoware:
 
   runtime:
     timeout_sec: 100.0
-    control_timeout_sec: 0.03
+    control_timeout_sec: 0.01
     allow_goal_modification: true

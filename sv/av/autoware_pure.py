@@ -39,6 +39,7 @@ from sv.utils.object import ObjectKinematic, ObjectState, RoadObjectType, ShapeT
 from sv.registry import register_av
 from sv.utils.control import Ctrl, CtrlMode
 from sv.utils.sps import ScenarioPack
+from sv.utils.publish_manager import PublishManager, PublishMode, TopicPublisher
 
 
 CLOCK_PUB_HZ = 100.0  # Hz
@@ -110,6 +111,7 @@ class AutowarePureAV:
         self._spin_thread: Optional[threading.Thread] = None
 
         # pub / sub / services
+        self._publish_manager = None
         self._kinematic_state_pub = None
         self._accel_pub = None
         self._objects_pub = None
@@ -370,29 +372,15 @@ class AutowarePureAV:
         self._agents = obs[1:] if len(obs) > 1 else []
 
         # publish
-        # if self._sim_time_stamp - self._last_heavy_data_time >= 0.01:
-        self._publish_tf()
-        self._publish_control_mode()
-        self._publish_gear_report()
-        self._publish_steering_report()
-        self._publish_velocity_report()
-        self._publish_ego_state()
-        self._publish_dynamic_objects()
-        self._publish_occupancy_grid()
-        self._publish_dummy_pointcloud()
-        # self._publish_occupancy_grid()
-        # self._publish_dummy_pointcloud()
-        self._last_heavy_data_time = self._sim_time_stamp
-
-        self._publish_clock(self._current_ros_time)
-        # ros2 topic pub -r 50 /clock rosgraph_msgs/msg/Clock "{clock: 'now'}"
+        now = self._convert_float_to_ros_time(self._current_ros_time)
+        self._publish_manager.publish_all(now)
 
         # wait for new control message
         last_stamp = self._latest_control.stamp
         last_second = last_stamp.sec + last_stamp.nanosec * 1e-9
 
-        if self._current_ros_time - last_second > 0.3:
-            wait_time = max(self._control_timeout_sec, float(0.001))
+        if self._current_ros_time - last_second >= 0.03:
+            wait_time = max(self._control_timeout_sec, float(0.01))
             deadline = time.time() + wait_time
             while time.time() < deadline:
                 if (
@@ -464,6 +452,7 @@ class AutowarePureAV:
         self._executor = MultiThreadedExecutor()
         self._executor.add_node(self._node)
         self._node.create_timer(1.0 / CLOCK_PUB_HZ, self._timer_callback)
+        self._publish_manager = PublishManager()
 
         qos_profile = 10
 
@@ -473,11 +462,29 @@ class AutowarePureAV:
             "/localization/kinematic_state",
             qos_profile,
         )
+        self._publish_manager.add(
+            TopicPublisher(
+                name="kinematic_state",
+                rate_hz=40.0,
+                mode=PublishMode.FIXED_RATE,
+                enabled=True,
+                publish_fn=lambda t: self._publish_kinematic_state(t),
+            )
+        )
 
         self._accel_pub = self._node.create_publisher(
             geometry_msgs.AccelWithCovarianceStamped,
             "/localization/acceleration",
             qos_profile,
+        )
+        self._publish_manager.add(
+            TopicPublisher(
+                name="accel",
+                rate_hz=40.0,
+                mode=PublishMode.FIXED_RATE,
+                enabled=True,
+                publish_fn=lambda t: self._publish_accel(t),
+            )
         )
 
         self._objects_pub = self._node.create_publisher(
@@ -485,16 +492,44 @@ class AutowarePureAV:
             "/perception/object_recognition/detection/objects",
             1,
         )
+        self._publish_manager.add(
+            TopicPublisher(
+                name="dynamic_objects",
+                rate_hz=10.0,
+                mode=PublishMode.FIXED_RATE,
+                enabled=True,
+                publish_fn=lambda t: self._publish_dynamic_objects(t),
+            )
+        )
 
         self._dummy_pointcloud_pub = self._node.create_publisher(
             sensor_msgs.PointCloud2,
             "/perception/obstacle_segmentation/pointcloud",
             qos_profile,
         )
+        self._publish_manager.add(
+            TopicPublisher(
+                name="dummy_pointcloud",
+                rate_hz=10.0,
+                mode=PublishMode.FIXED_RATE,
+                enabled=True,
+                publish_fn=lambda t: self._publish_dummy_pointcloud(t),
+            )
+        )
+
         self._control_mode_pub = self._node.create_publisher(
             autoware_vehicle_msgs.ControlModeReport,
             "/vehicle/status/control_mode",
             qos_profile,
+        )
+        self._publish_manager.add(
+            TopicPublisher(
+                name="control_mode",
+                rate_hz=40.0,
+                mode=PublishMode.FIXED_RATE,
+                enabled=True,
+                publish_fn=lambda t: self._publish_control_mode(t),
+            )
         )
 
         self._gear_report_pub = self._node.create_publisher(
@@ -502,11 +537,29 @@ class AutowarePureAV:
             "/vehicle/status/gear_status",
             qos_profile,
         )
+        self._publish_manager.add(
+            TopicPublisher(
+                name="gear_report",
+                rate_hz=40.0,
+                mode=PublishMode.FIXED_RATE,
+                enabled=True,
+                publish_fn=lambda t: self._publish_gear_report(t),
+            )
+        )
 
         self._steering_report_pub = self._node.create_publisher(
             autoware_vehicle_msgs.SteeringReport,
             "/vehicle/status/steering_status",
             qos_profile,
+        )
+        self._publish_manager.add(
+            TopicPublisher(
+                name="steering_report",
+                rate_hz=40.0,
+                mode=PublishMode.FIXED_RATE,
+                enabled=True,
+                publish_fn=lambda t: self._publish_steering_report(t),
+            )
         )
 
         self._velocity_report_pub = self._node.create_publisher(
@@ -514,11 +567,29 @@ class AutowarePureAV:
             "/vehicle/status/velocity_status",
             qos_profile,
         )
+        self._publish_manager.add(
+            TopicPublisher(
+                name="velocity_report",
+                rate_hz=40.0,
+                mode=PublishMode.FIXED_RATE,
+                enabled=True,
+                publish_fn=lambda t: self._publish_velocity_report(t),
+            )
+        )
 
         self._occupancy_grid_pub = self._node.create_publisher(
             nav_msgs.OccupancyGrid,
             "/perception/occupancy_grid_map/map",
             qos_profile,
+        )
+        self._publish_manager.add(
+            TopicPublisher(
+                name="occupancy_grid",
+                rate_hz=10.0,
+                mode=PublishMode.FIXED_RATE,
+                enabled=True,
+                publish_fn=lambda t: self._publish_occupancy_grid(t),
+            )
         )
 
         qos = QoSProfile(depth=1)
@@ -529,7 +600,26 @@ class AutowarePureAV:
             "/clock",
             qos,
         )
+        self._publish_manager.add(
+            TopicPublisher(
+                name="clock",
+                rate_hz=100.0,
+                mode=PublishMode.ALWAYS,
+                enabled=True,
+                publish_fn=lambda t: self._publish_clock(t),
+            )
+        )
+
         self._tf_broadcaster = TransformBroadcaster(self._node)
+        self._publish_manager.add(
+            TopicPublisher(
+                name="tf",
+                rate_hz=40.0,
+                mode=PublishMode.FIXED_RATE,
+                enabled=True,
+                publish_fn=lambda t: self._publish_tf(t),
+            )
+        )
 
         # subscribers
         self._control_sub = self._node.create_subscription(
@@ -657,22 +747,12 @@ class AutowarePureAV:
         if not self._initialized:
             self._base_time += 1.0 / CLOCK_PUB_HZ
             self._current_ros_time = self._base_time
+
             self._kinematic.time = self._current_ros_time
             self._update_kinematic(self._kinematic)
-            # if self._current_ros_time - self._last_heavy_data_time >= 0.01:
-            self._publish_tf()
-            self._publish_control_mode()
-            self._publish_gear_report()
-            self._publish_steering_report()
-            self._publish_velocity_report()
-            self._publish_ego_state()
-            self._publish_dynamic_objects()
-            self._publish_occupancy_grid()
-            self._publish_dummy_pointcloud()
-            # self._publish_occupancy_grid()
-            # self._publish_imu()
-            # self._publish_dummy_pointcloud()
-            self._publish_clock(self._current_ros_time)
+
+            now = self._convert_float_to_ros_time(self._current_ros_time)
+            self._publish_manager.publish_all(now)
 
     def _on_control(self, msg: autoware_control_msgs.Control) -> None:
         self._latest_control = msg
@@ -813,11 +893,10 @@ class AutowarePureAV:
     # ------------------------------------------------------------------
     # publish helpers
     # ------------------------------------------------------------------
-    def _publish_ego_state(self) -> None:
+    def _publish_kinematic_state(self, t: rclpy.time.Time) -> None:
         assert self._node is not None
 
-        # now = self._node.get_clock().now().to_msg()
-        now = self._convert_float_to_ros_time(self._current_ros_time).to_msg()
+        now = t.to_msg()
 
         # ODOMETRY
         msg = nav_msgs.Odometry()
@@ -838,7 +917,8 @@ class AutowarePureAV:
 
         self._kinematic_state_pub.publish(msg)
 
-        # ACC
+    def _publish_accel(self, t: rclpy.time.Time) -> None:
+        now = t.to_msg()
         accel = geometry_msgs.AccelWithCovarianceStamped()
         accel.header.stamp = now
         accel.header.frame_id = "base_link"
@@ -846,12 +926,9 @@ class AutowarePureAV:
         accel.accel.accel.angular = self._imu_state.angular_velocity
         self._accel_pub.publish(accel)
 
-    def _publish_dynamic_objects(self) -> None:
+    def _publish_dynamic_objects(self, t: rclpy.time.Time) -> None:
         msg = autoware_perception_msgs.DetectedObjects()
-        # msg.header.stamp = self._node.get_clock().now().to_msg()
-        msg.header.stamp = self._convert_float_to_ros_time(
-            self._current_ros_time
-        ).to_msg()
+        msg.header.stamp = t.to_msg()
 
         msg.header.frame_id = "map"
 
@@ -925,13 +1002,10 @@ class AutowarePureAV:
 
         self._objects_pub.publish(msg)
 
-    def _publish_dummy_pointcloud(self) -> None:
+    def _publish_dummy_pointcloud(self, t: rclpy.time.Time) -> None:
         # Empty PointCloud2
         msg = sensor_msgs.PointCloud2()
-        # msg.header.stamp = self._node.get_clock().now().to_msg()
-        msg.header.stamp = self._convert_float_to_ros_time(
-            self._current_ros_time
-        ).to_msg()
+        msg.header.stamp = t.to_msg()
         msg.header.frame_id = "base_link"
         msg.height = 1
         msg.width = 0
@@ -973,13 +1047,11 @@ class AutowarePureAV:
         msg.data = b""
         self._dummy_pointcloud_pub.publish(msg)
 
-    def _publish_tf(self) -> None:
+    def _publish_tf(self, t: rclpy.time.Time) -> None:
         if self._kinematic is None:
             logger.warning("No kinematic state skipping TF publish")
             return
-
-        # now = self._node.get_clock().now().to_msg()
-        now = self._convert_float_to_ros_time(self._current_ros_time).to_msg()
+        now = t.to_msg()
 
         t = geometry_msgs.TransformStamped()
         t.header.stamp = now
@@ -997,33 +1069,27 @@ class AutowarePureAV:
         # publish
         self._tf_broadcaster.sendTransform(t)
 
-    def _publish_control_mode(self) -> None:
+    def _publish_control_mode(self, t: rclpy.time.Time) -> None:
         msg = autoware_vehicle_msgs.ControlModeReport()
-        # msg.stamp = self._node.get_clock().now().to_msg()
-        msg.stamp = self._convert_float_to_ros_time(self._current_ros_time).to_msg()
+        msg.stamp = t.to_msg()
         msg.mode = self._control_mode
         self._control_mode_pub.publish(msg)
 
-    def _publish_gear_report(self) -> None:
+    def _publish_gear_report(self, t: rclpy.time.Time) -> None:
         msg = autoware_vehicle_msgs.GearReport()
-        # msg.stamp = self._node.get_clock().now().to_msg()
-        msg.stamp = self._convert_float_to_ros_time(self._current_ros_time).to_msg()
+        msg.stamp = t.to_msg()
         msg.report = self._current_gear
         self._gear_report_pub.publish(msg)
 
-    def _publish_steering_report(self) -> None:
+    def _publish_steering_report(self, t: rclpy.time.Time) -> None:
         msg = autoware_vehicle_msgs.SteeringReport()
-        # msg.stamp = self._node.get_clock().now().to_msg()
-        msg.stamp = self._convert_float_to_ros_time(self._current_ros_time).to_msg()
+        msg.stamp = t.to_msg()
         msg.steering_tire_angle = self._latest_control.lateral.steering_tire_angle
         self._steering_report_pub.publish(msg)
 
-    def _publish_velocity_report(self) -> None:
+    def _publish_velocity_report(self, t: rclpy.time.Time) -> None:
         msg = autoware_vehicle_msgs.VelocityReport()
-        # msg.header.stamp = self._node.get_clock().now().to_msg()
-        msg.header.stamp = self._convert_float_to_ros_time(
-            self._current_ros_time
-        ).to_msg()
+        msg.header.stamp = t.to_msg()
         msg.header.frame_id = "base_link"
         msg.longitudinal_velocity = self._kinematic.speed
         msg.lateral_velocity = 0.0
@@ -1032,12 +1098,9 @@ class AutowarePureAV:
 
         self._velocity_report_pub.publish(msg)
 
-    def _publish_occupancy_grid(self) -> None:
+    def _publish_occupancy_grid(self, t: rclpy.time.Time) -> None:
         msg = nav_msgs.OccupancyGrid()
-        # msg.header.stamp = self._node.get_clock().now().to_msg()
-        msg.header.stamp = self._convert_float_to_ros_time(
-            self._current_ros_time
-        ).to_msg()
+        msg.header.stamp = t.to_msg()
         msg.header.frame_id = "map"
 
         # 這裡可以根據需要填入實際的 occupancy grid 資料
@@ -1055,10 +1118,9 @@ class AutowarePureAV:
 
         self._occupancy_grid_pub.publish(msg)
 
-    def _publish_clock(self, t: float) -> None:
+    def _publish_clock(self, t: rclpy.time.Time) -> None:
         msg = rosgraph_msgs.Clock()
-        time = self._convert_float_to_ros_time(t)
-        msg.clock = time.to_msg()
+        msg.clock = t.to_msg()
         self._clock_pub.publish(msg)
 
     # ------------------------------------------------------------------
