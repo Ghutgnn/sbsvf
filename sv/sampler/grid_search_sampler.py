@@ -22,7 +22,6 @@ from sv.utils.util import get_cfg
 logger = getLogger(__name__)
 
 
-@register_sampler("grid_search")
 class GridSearchSampler(BaseSampler):
     """
     直接註冊 class：

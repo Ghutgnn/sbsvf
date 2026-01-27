@@ -25,18 +25,23 @@ scenarios:
 
 simulator:
   name: esmini
+  module: sv.sim.esmini:EsminiAdapter
   cfg_path: configs/sim/esmini_docker.yaml
 
 av:
   name: autoware_pure
+  module: sv.av.autoware_pure:AutowarePureAV
   cfg_path: configs/av/autoware_pure.yaml
 
 bridge:
   name: none
+  module: sv.bridge.none:NoneBridge
 
 monitor:
   name: default
+  module: sv.monitor.default:defaultMonitor
   cfg_path: configs/monitor/default.yaml
 
 sampler:
   name: grid_search
+  module: sv.sampler.grid_search:GridSearchSampler

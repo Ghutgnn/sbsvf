@@ -10,11 +10,13 @@ from sv.runner import Runner
 from sv.utils.sps import ScenarioPack
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
-import sv.sim
-import sv.av
-import sv.bridge
-import sv.monitor
-import sv.sampler
+
+
+# import sv.sim
+# import sv.av
+# import sv.bridge
+# import sv.monitor
+# import sv.sampler
 
 logger = logging.getLogger(__name__)
 

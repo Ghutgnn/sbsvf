@@ -127,7 +127,6 @@ TYPE_MAP = {
 }
 
 
-@register_sim("esmini")
 class EsminiAdapter:
     def __init__(self, cfg_path: Union[str, Path]):
         self._time = 0.0

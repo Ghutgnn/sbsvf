@@ -3,7 +3,6 @@ from sv.registry import register_monitor
 from sv.utils.sps import ScenarioPack
 
 
-@register_monitor("default")
 class defaultMonitor:
     def __init__(self, cfg_path: dict, plan_name: str) -> None:
         pass

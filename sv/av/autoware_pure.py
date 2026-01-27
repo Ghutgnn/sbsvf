@@ -59,7 +59,6 @@ OBJECT_TYPE_MAP = {
 logger = logging.getLogger(__name__)
 
 
-@register_av("autoware_pure")
 class AutowarePureAV:
     """
     Autoware AV adapter:

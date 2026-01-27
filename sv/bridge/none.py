@@ -5,7 +5,6 @@ from sv.utils.control import Ctrl
 from sv.utils.sps import ScenarioPack
 
 
-@register_bridge("none")
 class NoneBridge:
     def __init__(self, cfg_path: dict):
         pass
