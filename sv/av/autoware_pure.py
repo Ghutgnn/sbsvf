@@ -454,7 +454,16 @@ class AutowarePureAV:
         self._node.create_timer(1.0 / CLOCK_PUB_HZ, self._timer_callback)
         self._publish_manager = PublishManager()
 
-        qos_profile = 10
+        # QoS profile:
+        # Reliability: RELIABLE
+        # History (Depth): KEEP_LAST (1)
+        # Durability: VOLATILE
+        # Lifespan: Infinite
+        # Deadline: Infinite
+        # Liveliness: AUTOMATIC
+        # Liveliness lease duration: Infinite
+
+        qos_profile = QoSProfile(depth=1)
 
         # publishers
         self._kinematic_state_pub = self._node.create_publisher(
@@ -490,7 +499,7 @@ class AutowarePureAV:
         self._objects_pub = self._node.create_publisher(
             autoware_perception_msgs.DetectedObjects,
             "/perception/object_recognition/detection/objects",
-            1,
+            qos_profile,
         )
         self._publish_manager.add(
             TopicPublisher(
@@ -505,7 +514,7 @@ class AutowarePureAV:
         self._dummy_pointcloud_pub = self._node.create_publisher(
             sensor_msgs.PointCloud2,
             "/perception/obstacle_segmentation/pointcloud",
-            qos_profile,
+            QoSProfile(depth=1, durability=QoSDurabilityPolicy.TRANSIENT_LOCAL),
         )
         self._publish_manager.add(
             TopicPublisher(
@@ -592,13 +601,10 @@ class AutowarePureAV:
             )
         )
 
-        qos = QoSProfile(depth=1)
-        qos.reliability = QoSReliabilityPolicy.BEST_EFFORT
-        qos.durability = QoSDurabilityPolicy.VOLATILE
         self._clock_pub = self._node.create_publisher(
             rosgraph_msgs.Clock,
             "/clock",
-            qos,
+            qos_profile,
         )
         self._publish_manager.add(
             TopicPublisher(
