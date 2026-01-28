@@ -310,6 +310,16 @@ class AutowarePureAV:
             raise RuntimeError("Autoware planning timed out.")
 
         logger.info("Autoware reset ready. Ready to engage.")
+        speed = float(self._latest_control.longitudinal.velocity)
+        steering = float(self._latest_control.lateral.steering_tire_angle)
+
+        return Ctrl(
+            mode=CtrlMode.VEL_STEER,
+            payload={
+                "speed": speed,
+                "h": steering,
+            },
+        )
 
     def step(self, obs: Dict[str, Any], time_stamp_ns: int) -> Ctrl:
         """

@@ -146,16 +146,28 @@ class Runner:
         sps: ScenarioPack,
         params: Optional[dict[str, Any]] = None,
     ) -> None:
-        init_obs = None
+        raw_obs = None
         try:
-            init_obs = self.sim.reset(sps, params)
+            raw_obs = self.sim.reset(sps, params)
         except Exception as e:
             logger.error(f"Simulator reset failed: {e}")
             return
+
         try:
-            self.av.reset(sps, init_obs)
+            obs_for_av = self.bridge.sim_to_av(raw_obs)
+        except Exception as e:
+            logger.error(f"Bridge sim_to_av failed: {e}")
+            return
+
+        try:
+            ctrl_from_av = self.av.reset(sps, obs_for_av)
         except Exception as e:
             logger.error(f"AV reset failed: {e}")
+            return
+        try:
+            ctrl_for_sim = self.bridge.av_to_sim(ctrl_from_av)
+        except Exception as e:
+            logger.error(f"Bridge av_to_sim failed: {e}")
             return
 
         dt_s = runtime_cfg.get("dt", -1)
@@ -168,7 +180,7 @@ class Runner:
             prev = time()
 
         sim_time_ns = 0  # Simulation time in nanoseconds
-        ctrl_for_sim: Ctrl = Ctrl()
+        # ctrl_for_sim: Ctrl = Ctrl()
         try:
             real_start_time_s = time()
             while True:
