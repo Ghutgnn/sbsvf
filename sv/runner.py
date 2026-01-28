@@ -38,35 +38,35 @@ class Runner:
         self.plan_name = plan_name
         self.runtime_cfg = runtime_cfg
         self.sps = sps
-        
-        # SIM 
-        module = importlib.import_module(sim_cfg['module'].split(":")[0])
-        sim_class = getattr(module, sim_cfg['module'].split(":")[1])
+
+        # SIM
+        module = importlib.import_module(sim_cfg["module"].split(":")[0])
+        sim_class = getattr(module, sim_cfg["module"].split(":")[1])
         self.sim = sim_class(cfg_path=sim_cfg.get("cfg_path", None))
-        
+
         # AV
-        module = importlib.import_module(av_cfg['module'].split(":")[0])
-        av_class = getattr(module, av_cfg['module'].split(":")[1])  
+        module = importlib.import_module(av_cfg["module"].split(":")[0])
+        av_class = getattr(module, av_cfg["module"].split(":")[1])
         self.av = av_class(cfg_path=av_cfg.get("cfg_path", None))
-        
+
         # Bridge
-        module = importlib.import_module(bridge_cfg['module'].split(":")[0])
-        bridge_class = getattr(module, bridge_cfg['module'].split(":")[1])
+        module = importlib.import_module(bridge_cfg["module"].split(":")[0])
+        bridge_class = getattr(module, bridge_cfg["module"].split(":")[1])
         self.bridge = bridge_class(cfg_path=bridge_cfg.get("cfg_path", None))
-        
+
         # Monitor
-        module = importlib.import_module(monitor_cfg['module'].split(":")[0])
-        monitor_class = getattr(module, monitor_cfg['module'].split(":")[1])
+        module = importlib.import_module(monitor_cfg["module"].split(":")[0])
+        monitor_class = getattr(module, monitor_cfg["module"].split(":")[1])
         self.monitor = monitor_class(
             cfg_path=monitor_cfg.get("cfg_path", None),
             plan_name=plan_name,
         )
-    
+
         if self.sps.param_range_file is not None:
             logger.info("Parameter range file provided: %s", self.sps.param_range_file)
             # param_sampler
-            module = importlib.import_module(sampler_cfg['module'].split(":")[0])
-            sampler_class = getattr(module, sampler_cfg['module'].split(":")[1])
+            module = importlib.import_module(sampler_cfg["module"].split(":")[0])
+            sampler_class = getattr(module, sampler_cfg["module"].split(":")[1])
             self.param_sampler = sampler_class(
                 param_range_file=self.sps.param_range_file,
                 past_results=None,
@@ -194,12 +194,12 @@ class Runner:
                 cur = time()
                 time_use = cur - sim_start_time
 
-                # loop_need_time = time() - loop_start_time
-                # sleep_time = dt - loop_need_time
-                # if sleep_time > 0:
-                #     # print("Sleeping for ", sleep_time)
-                #     sleep(sleep_time)
-
+                loop_need_time = time() - loop_start_time
+                sleep_time = dt - loop_need_time
+                if sleep_time > 0:
+                    # print("Sleeping for ", sleep_time)
+                    sleep(sleep_time)
+                # sleep(0.1)
                 print(
                     f"time use = {time_use:.2f}, sim_time = {time_stamp:.2f}",
                     end="  \r",
