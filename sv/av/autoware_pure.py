@@ -385,7 +385,6 @@ class AutowarePureAV:
         self._agents = obs[1:] if len(obs) > 1 else []
 
         # publish
-        # now = self._convert_float_to_ros_time(self._current_ros_time)
         now = Time(nanoseconds=self._current_ros_time_ns)
         self._publish_manager.publish_all(now)
 
@@ -470,13 +469,13 @@ class AutowarePureAV:
         self._publish_manager = PublishManager()
 
         # QoS profile:
-        # Reliability: RELIABLE
-        # History (Depth): KEEP_LAST (1)
-        # Durability: VOLATILE
-        # Lifespan: Infinite
-        # Deadline: Infinite
-        # Liveliness: AUTOMATIC
-        # Liveliness lease duration: Infinite
+            # Reliability: RELIABLE
+            # History (Depth): KEEP_LAST (1)
+            # Durability: VOLATILE
+            # Lifespan: Infinite
+            # Deadline: Infinite
+            # Liveliness: AUTOMATIC
+            # Liveliness lease duration: Infinite
 
         qos_profile = QoSProfile(depth=1)
 
@@ -1150,6 +1149,7 @@ class AutowarePureAV:
     def _publish_steering_report(self, t: rclpy.time.Time) -> None:
         msg = autoware_vehicle_msgs.SteeringReport()
         msg.stamp = t.to_msg()
+        # TODO: This should be obtained from vehicle state
         angle = (
             self._latest_control.lateral.steering_tire_angle
             if self._latest_control
@@ -1169,21 +1169,21 @@ class AutowarePureAV:
         self._velocity_report_pub.publish(msg)
 
     def _publish_occupancy_grid(self, t: rclpy.time.Time) -> None:
+        # TODO: Check how to get actual occupancy grid from Autoware
         msg = nav_msgs.OccupancyGrid()
         msg.header.stamp = t.to_msg()
         msg.header.frame_id = "map"
 
-        # 這裡可以根據需要填入實際的 occupancy grid 資料
-        # 目前先填入空的 grid
-        msg.info.resolution = 0.5  # 每個格子的大小 (公尺)
-        msg.info.width = 200  # 格子數量 (寬)
-        msg.info.height = 200  # 格子數量 (高)
-        msg.info.origin.position.x = -50.0  # 原點位置
-        msg.info.origin.position.y = -50.0
+        # Empty map info
+        msg.info.resolution = 0.5  # size of each grid cell (m)
+        msg.info.width = 200  # number of grids (width)
+        msg.info.height = 200  # number of grids (height)
+        msg.info.origin.position.x = -50.0  # bottom-left x (m)
+        msg.info.origin.position.y = -50.0  # bottom-left y (m)
         msg.info.origin.position.z = 0.0
         msg.info.origin.orientation.w = 1.0
 
-        # 填入資料 (全部未知)
+        # Unknown occupancy
         msg.data = [-1] * (msg.info.width * msg.info.height)
 
         self._occupancy_grid_pub.publish(msg)
