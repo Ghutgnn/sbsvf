@@ -16,6 +16,7 @@ import uuid
 import rclpy
 from rclpy.node import Node
 from rclpy.executors import MultiThreadedExecutor
+from rclpy.time import Time, Duration
 
 # from rclpy.qos import QoSProfile, ReliabilityPolicy, DurabilityPolicy, HistoryPolicy
 from rclpy.qos import QoSProfile, QoSReliabilityPolicy, QoSDurabilityPolicy
@@ -130,11 +131,11 @@ class AutowarePureAV:
 
         # Adapter internal state
         self._initialized: bool = False
-        self._base_time: float = 0.0  # time at sim_time = 0.0 (seconds)
-        self._sim_time_stamp: float = 0.0  # time at current sim step (seconds)
-        self._current_ros_time: float = (
-            0.0  # _current_ros_time = _base_time + _sim_time_stamp
-        )
+
+        self._base_time_ns: int = 0  # time at sim_time == 0 (nanoseconds)
+        self._sim_time_ns: int = 0  # time at current sim step (nanoseconds)
+        self._current_ros_time_ns: int = 0  # current ROS time (nanoseconds)
+
         self._last_heavy_data_time: float = 0.0
         self._vehicle_state: Optional[int] = None
         self._control_mode: Optional[int] = (
@@ -214,8 +215,8 @@ class AutowarePureAV:
 
         # 清 internal state
         self._initialized = False
-        self._base_time = self._current_ros_time
-        self._sim_time_stamp = 0.0
+        self._base_time_ns = self._current_ros_time_ns
+        self._sim_time_ns = 0
         self._latest_control = None
         self._latest_control_stamp = 0
         self._control_mode = autoware_vehicle_msgs.ControlModeReport.NO_COMMAND
@@ -228,7 +229,7 @@ class AutowarePureAV:
         self._prev_prev_kinematic = ObjectKinematic()
 
         # init_kinematic = ObjectKinematic.from_dict(ipos.to_dict())
-        # init_kinematic.time = self._current_ros_time
+        # init_kinematic.time_ns = self._current_ros_time
 
         # # TODO: check position type consistency
         # init_kinematic.yaw = (
@@ -241,7 +242,7 @@ class AutowarePureAV:
         # if init_obs is None or len(init_obs) == 0:
 
         init_kinematic = init_obs[0].kinematic
-        init_kinematic.time = self._current_ros_time
+        init_kinematic.time_ns = self._current_ros_time_ns
         self._agents = init_obs[1:] if init_obs and len(init_obs) > 1 else []
 
         self._update_kinematic(init_kinematic)
@@ -310,7 +311,7 @@ class AutowarePureAV:
 
         logger.info("Autoware reset ready. Ready to engage.")
 
-    def step(self, obs: Dict[str, Any], time_stamp: float) -> Ctrl:
+    def step(self, obs: Dict[str, Any], time_stamp_ns: int) -> Ctrl:
         """
         - 發 ego state + optional agents 給 Autoware
         - 等待一筆「新的」 control_cmd（最多 control_timeout_sec）
@@ -324,8 +325,8 @@ class AutowarePureAV:
         """
         self._ensure_ros_node()
 
-        self._sim_time_stamp = time_stamp
-        self._current_ros_time = self._base_time + self._sim_time_stamp
+        self._sim_time_ns = time_stamp_ns
+        self._current_ros_time_ns = self._base_time_ns + self._sim_time_ns
 
         # Check Autoware vehicle state
         if (
@@ -374,13 +375,14 @@ class AutowarePureAV:
         ego = obs[0]
         if ego is not None:
             cur_kinematic = ego.kinematic
-            cur_kinematic.time = self._current_ros_time
+            cur_kinematic.time_ns = self._current_ros_time_ns
             self._update_kinematic(cur_kinematic)
 
         self._agents = obs[1:] if len(obs) > 1 else []
 
         # publish
-        now = self._convert_float_to_ros_time(self._current_ros_time)
+        # now = self._convert_float_to_ros_time(self._current_ros_time)
+        now = Time(nanoseconds=self._current_ros_time_ns)
         self._publish_manager.publish_all(now)
 
         if self._rt_cfg.get("wait_control", False):
@@ -394,10 +396,6 @@ class AutowarePureAV:
                 ):
                     break
                 time.sleep(0.001)
-
-        print(
-            f"Latest control stamp: {self._latest_control.stamp.sec * 1e9 + self._latest_control.stamp.nanosec if self._latest_control is not None else None}, Current time: {self._current_ros_time*1e9}"
-        )
 
         if self._latest_control is None:
             logger.warning(
@@ -768,13 +766,13 @@ class AutowarePureAV:
     # ------------------------------------------------------------------
     def _timer_callback(self):
         if not self._initialized:
-            self._base_time += 1.0 / CLOCK_PUB_HZ
-            self._current_ros_time = self._base_time
+            self._base_time_ns += (1.0 / CLOCK_PUB_HZ) * 1e9
+            self._current_ros_time_ns = self._base_time_ns
 
-            self._kinematic.time = self._current_ros_time
+            self._kinematic.time_ns = self._current_ros_time_ns
             self._update_kinematic(self._kinematic)
 
-            now = self._convert_float_to_ros_time(self._current_ros_time)
+            now = Time(nanoseconds=self._current_ros_time_ns)
             self._publish_manager.publish_all(now)
 
     def _on_control(self, msg: autoware_control_msgs.Control) -> None:
@@ -805,7 +803,7 @@ class AutowarePureAV:
 
     def _call_initialize_localization(self, sps: ScenarioPack) -> None:
         assert self._node is not None
-        now = self._convert_float_to_ros_time(self._current_ros_time).to_msg()
+        now = Time(nanoseconds=self._current_ros_time_ns).to_msg()
 
         t = geometry_msgs.TransformStamped()
         t.header.stamp = now
@@ -878,9 +876,7 @@ class AutowarePureAV:
         req = autoware_adapi_v1_msgs_srv.SetRoutePoints.Request()
         req.header.frame_id = "map"
         # req.header.stamp = self._node.get_clock().now().to_msg()
-        req.header.stamp = self._convert_float_to_ros_time(
-            self._current_ros_time
-        ).to_msg()
+        req.header.stamp = Time(nanoseconds=self._current_ros_time_ns).to_msg()
 
         gp = sps.ego.goal.position
         goal = geometry_msgs.Pose()
@@ -1178,10 +1174,10 @@ class AutowarePureAV:
     # ------------------------------------------------------------------
     # helpers
     # ------------------------------------------------------------------
-    def _convert_float_to_ros_time(self, t: float) -> rclpy.time.Time:
-        sec = int(t)
-        nanosec = int((t - sec) * 1e9)
-        return rclpy.time.Time(seconds=sec, nanoseconds=nanosec)
+    # def _convert_float_to_ros_time(self, t: float) -> rclpy.time.Time:
+    #     sec = int(t)
+    #     nanosec = int((t - sec) * 1e9)
+    #     return rclpy.time.Time(seconds=sec, nanoseconds=nanosec)
 
     def _update_kinematic(self, kinematic: ObjectKinematic) -> None:
         self._prev_prev_kinematic = self._prev_kinematic
@@ -1224,8 +1220,11 @@ class AutowarePureAV:
         3. 處理 Yaw 角度跳變
         """
         # 避免除以 0
-        dt1 = max(self._kinematic.time - self._prev_kinematic.time, 1e-5)
-        dt2 = max(self._prev_kinematic.time - self._prev_prev_kinematic.time, 1e-5)
+        dt1 = max((self._kinematic.time_ns - self._prev_kinematic.time_ns) * 1e-9, 1e-5)
+        dt2 = max(
+            (self._prev_kinematic.time_ns - self._prev_prev_kinematic.time_ns) * 1e-9,
+            1e-5,
+        )
         dt_avg = (dt1 + dt2) / 2.0
 
         # 1. 計算全域速度 (Global Velocity)
@@ -1271,9 +1270,13 @@ class AutowarePureAV:
         self._imu_state.linear_acceleration = linear_acceleration
         self._imu_state.angular_velocity = angular_velocity
         # self._imu_state.header.stamp = self._node.get_clock().now().to_msg()
-        self._imu_state.header.stamp = self._convert_float_to_ros_time(
-            self._current_ros_time
+        # self._imu_state.header.stamp = self._convert_float_to_ros_time(
+        #     self._current_ros_time
+        # ).to_msg()
+        self._imu_state.header.stamp = Time(
+            nanoseconds=self._current_ros_time_ns
         ).to_msg()
+
         self._imu_state.header.frame_id = "base_link"
 
     @staticmethod

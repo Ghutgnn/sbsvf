@@ -158,18 +158,22 @@ class Runner:
             logger.error(f"AV reset failed: {e}")
             return
 
-        dt = runtime_cfg.get("dt", -1)
+        dt_s = runtime_cfg.get("dt", -1)
+        dt_ns = int(dt_s * 1e9)
+
         use_real_time = False
-        if dt <= 0:  # use real-time stepping
-            dt = 0.001  # first step
+        if dt_ns <= 0:  # use real-time stepping
+            dt_ns = 0
             use_real_time = True
             prev = time()
 
-        time_stamp = 0.0  # seconds
+        sim_time_ns = 0  # Simulation time in nanoseconds
         ctrl_for_sim: Ctrl = Ctrl()
         try:
-            sim_start_time = time()
+            real_start_time_s = time()
             while True:
+                loop_start_time = time()
+
                 if self.sim.should_quit():
                     logger.info("Simulator requested to quit.")
                     break
@@ -179,39 +183,35 @@ class Runner:
 
                 if use_real_time:
                     t = time()
-                    dt = t - prev
+                    dt_ns = int((t - prev) * 1e9)
                     prev = t
 
-                loop_start_time = time()
-
-                time_stamp += dt
-                # print(f"Sim time: {time_stamp:.3f} sec", end="  \r")
-                raw_obs = self.sim.step(ctrl_for_sim, time_stamp)
+                raw_obs = self.sim.step(ctrl_for_sim, sim_time_ns)
                 obs_for_av = self.bridge.sim_to_av(raw_obs)
-                ctrl_from_av = self.av.step(obs_for_av, time_stamp)
+                ctrl_from_av = self.av.step(obs_for_av, sim_time_ns)
                 ctrl_for_sim = self.bridge.av_to_sim(ctrl_from_av)
+                sim_time_ns += dt_ns
 
-                cur = time()
-                time_use = cur - sim_start_time
+                cur_time_s = time()
+                time_use_s = cur_time_s - real_start_time_s
 
                 loop_need_time = time() - loop_start_time
-                sleep_time = dt - loop_need_time
-                if sleep_time > 0:
-                    # print("Sleeping for ", sleep_time)
-                    sleep(sleep_time)
-                # sleep(0.1)
+                sleep_time_s = dt_s - loop_need_time
+                if sleep_time_s > 0:
+                    sleep(sleep_time_s)
+
                 print(
-                    f"time use = {time_use:.2f}, sim_time = {time_stamp:.2f}",
+                    f"time use = {time_use_s:.2f} s, sim_time = {sim_time_ns / 1e9:.2f} s",
                     end="  \r",
                 )
 
-            sim_time_need = time() - sim_start_time
+            sim_time_need = time() - real_start_time_s
             # self.monitor.finalize()
         except Exception as e:
             logger.error(f"Error during scenario execution: {e}")
             return
         logger.info(
-            f"Completed {time_stamp} seconds scenario, using {sim_time_need} sec."
+            f"Completed {sim_time_ns / 1e9:.2f} seconds scenario, using {sim_time_need:.2f} sec."
         )
         logger.info("Scenario finished.")
 

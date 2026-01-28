@@ -81,13 +81,13 @@ class Vehicle:
         self.vh_state = SESimpleVehicleState()
         self._se.SE_SimpleVehicleGetState(self.sv_handle, ct.byref(self.vh_state))
 
-    def apply_control(self, ctrl: Ctrl, dt):
+    def apply_control(self, ctrl: Ctrl, dt_s: float):
         if ctrl.mode == CtrlMode.None_:
             return
         elif ctrl.mode == CtrlMode.THROTTLE_STEER:
             pedal = int(ctrl.payload.get("pedal", 0))
             wheel = int(ctrl.payload.get("wheel", 0))
-            self._se.SE_SimpleVehicleControlBinary(self.sv_handle, dt, pedal, wheel)
+            self._se.SE_SimpleVehicleControlBinary(self.sv_handle, dt_s, pedal, wheel)
             # Update vehicle state
             self._se.SE_SimpleVehicleGetState(self.sv_handle, ct.byref(self.vh_state))
 
@@ -95,7 +95,7 @@ class Vehicle:
             target_speed = ctrl.payload.get("speed", self.vh_state.speed)
             heading_to_target = ctrl.payload.get("h", self.vh_state.h)
             self._se.SE_SimpleVehicleControlTarget(
-                self.sv_handle, dt, target_speed, heading_to_target
+                self.sv_handle, dt_s, target_speed, heading_to_target
             )
             # Update vehicle state
             self._se.SE_SimpleVehicleGetState(self.sv_handle, ct.byref(self.vh_state))
@@ -129,11 +129,9 @@ TYPE_MAP = {
 
 class EsminiAdapter:
     def __init__(self, cfg_path: Union[str, Path]):
-        self._time = 0.0
-        self._inited = False
+        self._time_ns = 0
         self.cfg = get_cfg(cfg_path)
         self.esmini_home = self.cfg.get("esmini_home", "/opt/esmini/")
-        # self.obj_states = SEScenarioObjectState()
         self.se = ct.CDLL(self.esmini_home + "bin/libesminiLib.so")  # Linux
         self._c_param_cb = None
         self._params_obj = None
@@ -285,6 +283,10 @@ class EsminiAdapter:
         se.SE_GetNumberOfObjects.restype = ct.c_int
 
         se.SE_GetSimTimeStep.restype = ct.c_float
+
+        # SE_DLL_API float SE_GetSimulationTime();
+        se.SE_GetSimulationTime.restype = ct.c_float
+
         se.SE_StepDT.argtypes = [ct.c_float]
 
         se.SE_GetQuitFlag.restype = ct.c_int
@@ -303,20 +305,20 @@ class EsminiAdapter:
     def start(self, cfg: dict):
         pass
 
-    def step(self, ctrl: Ctrl, time_stamp: float):
+    def step(self, ctrl: Ctrl, time_stamp_ns: int):
         # if self.sim_state == SimulatorState.AV_CONNECTING:
         #     if ctrl.payload.get("pedal", 0) != 0 or ctrl.payload.get("wheel", 0) != 0:
         #         self.sim_state = SimulatorState.RUNNING
         #         logger.info("AV engaged.")
         #     return None
-        dt = max(time_stamp - self._time, 0.0)
-        self._time = time_stamp
-        # time_stamp = time_stamp if time_stamp > 0 else self.se.SE_GetSimTimeStep()
+
+        dt_s = (time_stamp_ns - self._time_ns) / 1e9
+        self._time_ns = time_stamp_ns
 
         se = self.se
 
         # Update vehicle control
-        self.ego_car.apply_control(ctrl, dt)
+        self.ego_car.apply_control(ctrl, dt_s)
 
         obj_id = se.SE_GetId(0)
         se.SE_ReportObjectPosXYH(
@@ -336,14 +338,14 @@ class EsminiAdapter:
             self.ego_car.vh_state.speed,
         )
 
-        se.SE_StepDT(dt)
+        se.SE_StepDT(dt_s)
 
         # Update object state
         for i in range(0, self.obj_count):
             obj_state = SEScenarioObjectState()
             se.SE_GetObjectState(se.SE_GetId(i), ct.byref(obj_state))
             kinematic = ObjectKinematic(
-                time=float(obj_state.timestamp),
+                time_ns=int(obj_state.timestamp * 1e9),
                 x=float(obj_state.x),
                 y=float(obj_state.y),
                 z=float(obj_state.z),
@@ -351,7 +353,6 @@ class EsminiAdapter:
                 speed=float(obj_state.speed),
             )
             self.objects[i].update(kinematic)
-
         return self.objects
 
     def stop(self):
@@ -430,6 +431,10 @@ class EsminiAdapter:
 
     def reset(self, sps: ScenarioPack, params: Optional[dict] = None):
         self.stop()
+
+        # Reset time
+        self._time_ns = 0
+
         if params is None:
             params = {}
 
@@ -485,7 +490,7 @@ class EsminiAdapter:
                 obj_type = TYPE_MAP.get(obj_category, RoadObjectType.UNKNOWN)
 
             obj_kinematic = ObjectKinematic(
-                time=float(obj_state.timestamp),
+                time_ns=int(obj_state.timestamp * 1e9),
                 x=float(obj_state.x),
                 y=float(obj_state.y),
                 z=float(obj_state.z),

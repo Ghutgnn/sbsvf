@@ -35,7 +35,7 @@ DEFAULT_SHAPES: dict[RoadObjectType, tuple[float, float, float]] = {
 
 @dataclass
 class ObjectKinematic:
-    time: float = 0.0
+    time_ns: int = 0  # timestamp in nanoseconds
 
     # position
     x: float = 0.0
@@ -54,7 +54,7 @@ class ObjectKinematic:
     @classmethod
     def from_dict(cls, data: dict) -> "ObjectKinematic":
         return cls(
-            time=float(data.get("time", 0.0)),
+            time_ns=int(data.get("time_ns", 0)),
             x=float(data.get("x", 0.0)),
             y=float(data.get("y", 0.0)),
             z=float(data.get("z", 0.0)),
