@@ -825,7 +825,6 @@ class AutowarePureAV:
 
         req = autoware_adapi_v1_msgs_srv.InitializeLocalization.Request()
         pose_msg = geometry_msgs.PoseWithCovarianceStamped()
-        # pose_msg.header.stamp = self._node.get_clock().now().to_msg()
         pose_msg.header.stamp = now
         pose_msg.header.frame_id = "map"
 
@@ -840,6 +839,16 @@ class AutowarePureAV:
         pose_msg.pose.pose.orientation.w = qw
 
         pose_msg.pose.covariance = [0.0] * 36
+        sigma_pos = 1e-3  # 1 mm
+        sigma_ang = 1e-4  # 0.0001 rad ~ 0.0057 deg
+
+        pose_msg.pose.covariance[0] = sigma_pos**2  # x
+        pose_msg.pose.covariance[7] = sigma_pos**2  # y
+        pose_msg.pose.covariance[14] = sigma_pos**2  # z
+
+        pose_msg.pose.covariance[21] = sigma_ang**2  # roll
+        pose_msg.pose.covariance[28] = sigma_ang**2  # pitch
+        pose_msg.pose.covariance[35] = sigma_ang**2  # yaw
 
         req.pose = [pose_msg]
 
@@ -1028,22 +1037,31 @@ class AutowarePureAV:
             kin.pose_with_covariance.pose.orientation.z = qz
             kin.pose_with_covariance.pose.orientation.w = qw
 
-            sx, sy, sz = 0.05, 0.05, 0.10  # meters
-            syaw = 0.017  # rad (≈1 deg)
+            sigma_pos = 1e-3  # 1 mm
+            sigma_ang = 1e-4  # 0.0001 rad ~ 0.0057 deg
 
-            kin.pose_with_covariance.covariance[0] = sx * sx
-            kin.pose_with_covariance.covariance[7] = sy * sy
-            kin.pose_with_covariance.covariance[14] = sz * sz
-            kin.pose_with_covariance.covariance[35] = syaw * syaw
+            kin.pose_with_covariance.covariance[0] = sigma_pos**2
+            kin.pose_with_covariance.covariance[7] = sigma_pos**2
+            kin.pose_with_covariance.covariance[14] = sigma_pos**2
+            kin.pose_with_covariance.covariance[21] = sigma_ang**2
+            kin.pose_with_covariance.covariance[28] = sigma_ang**2
+            kin.pose_with_covariance.covariance[35] = sigma_ang**2
 
             # Twist
             kin.has_twist = True
             kin.twist_with_covariance.twist.linear.x = ag.kinematic.speed
-            kin.twist_with_covariance.twist.angular.z = 0.0
-            # TODO: Agent's twist calculation
-            kin.has_twist_covariance = False
-            # agent_speed = ag.kinematic.speed
-            # kin.twist_with_covariance.twist.linear.x = agent_speed
+            kin.twist_with_covariance.twist.angular.z = ag.kinematic.yaw_rate
+
+            sigma_v = 0.02  # m/s
+            sigma_w = 0.01  # rad/s
+
+            kin.has_twist_covariance = True
+            kin.twist_with_covariance.covariance[0] = sigma_v**2
+            kin.twist_with_covariance.covariance[7] = sigma_v**2
+            kin.twist_with_covariance.covariance[14] = sigma_v**2
+            kin.twist_with_covariance.covariance[21] = sigma_w**2
+            kin.twist_with_covariance.covariance[28] = sigma_w**2
+            kin.twist_with_covariance.covariance[35] = sigma_w**2
 
             obj.kinematics = kin
             msg.objects.append(obj)
