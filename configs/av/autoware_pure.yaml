@@ -25,3 +25,4 @@ autoware:
     timeout_sec: 100.0
     control_timeout_sec: 0.01
     allow_goal_modification: true
+    wait_control: true # wait for current ROS2 control message at each sim step (it will make simulation slower), if false, use last received control command

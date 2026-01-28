@@ -21,7 +21,7 @@ artifacts:
   out_dir: artifacts/mvp
 
 scenarios:
-  - scenarios/mvp/plan.yaml
+  - scenarios/mvp_distribution/plan.yaml
 
 simulator:
   name: esmini
@@ -44,4 +44,4 @@ monitor:
 
 sampler:
   name: grid_search
-  module: sv.sampler.grid_search:GridSearchSampler
+  module: sv.sampler.grid_search_sampler:GridSearchSampler

@@ -97,7 +97,7 @@ class AutowarePureAV:
 
         self._rt_cfg = self._autoware_cfg.get("runtime", {})
         self._timeout_sec = float(self._rt_cfg.get("timeout_sec", 30.0))
-        self._control_timeout_sec = float(self._rt_cfg.get("control_timeout_sec", 0.1))
+        self._control_timeout_sec = float(self._rt_cfg.get("control_timeout_sec", 0.01))
 
         # ScenarioPack
         self._sps: Optional[ScenarioPack] = None
@@ -141,10 +141,8 @@ class AutowarePureAV:
             autoware_vehicle_msgs.ControlModeReport.NO_COMMAND
         )
         self._current_gear: Optional[int] = autoware_vehicle_msgs.GearCommand.NONE
-        self._latest_control: autoware_control_msgs.Control = (
-            autoware_control_msgs.Control()
-        )
-        self._latest_control_stamp = None
+        self._latest_control: autoware_control_msgs.Control = None
+        self._latest_control_stamp = 0
         self._kinematic: ObjectKinematic = ObjectKinematic()
         self._prev_kinematic: ObjectKinematic = ObjectKinematic()
         self._prev_prev_kinematic: ObjectKinematic = ObjectKinematic()
@@ -196,6 +194,7 @@ class AutowarePureAV:
         1. 如有換 map，就重啟 Autoware
         2. 用 AD API 設 initial pose / route
         """
+
         self._ensure_ros_node()
 
         # If the map has changed, restart Autoware process
@@ -214,13 +213,15 @@ class AutowarePureAV:
             self._wait_for_service(self._client_change_to_auto, "ChangeOperationMode")
 
         # 清 internal state
-        self._latest_control = autoware_control_msgs.Control()
-        self._latest_control_stamp = None
+        self._initialized = False
+        self._base_time = self._current_ros_time
+        self._sim_time_stamp = 0.0
+        self._latest_control = None
+        self._latest_control_stamp = 0
         self._control_mode = autoware_vehicle_msgs.ControlModeReport.NO_COMMAND
         self._current_gear = autoware_vehicle_msgs.GearCommand.NONE
         self._quit_flag = False
         self._last_error = None
-        self._sim_time_stamp = 0.0
 
         self._kinematic = ObjectKinematic()
         self._prev_kinematic = ObjectKinematic()
@@ -258,13 +259,21 @@ class AutowarePureAV:
         start = time.time()
         while (
             self._vehicle_state != autoware_system_msgs.AutowareState.WAITING_FOR_ROUTE
+            and self._vehicle_state
+            != autoware_system_msgs.AutowareState.WAITING_FOR_ENGAGE
             and time.time() - start < self._timeout_sec
         ):
-            logger.info(f"Waiting for autoware localization...")
+            logger.info(
+                f"Waiting for autoware localization... state:{self._vehicle_state} "
+            )
             time.sleep(0.1)
 
         # Check if localization is ready
-        if self._vehicle_state != autoware_system_msgs.AutowareState.WAITING_FOR_ROUTE:
+        if (
+            self._vehicle_state != autoware_system_msgs.AutowareState.WAITING_FOR_ROUTE
+            and self._vehicle_state
+            != autoware_system_msgs.AutowareState.WAITING_FOR_ENGAGE
+        ):
             logger.error("Autoware localization initialization timed out.")
             self._quit_flag = True
             self._last_error = "Autoware localization initialization timed out."
@@ -374,20 +383,21 @@ class AutowarePureAV:
         now = self._convert_float_to_ros_time(self._current_ros_time)
         self._publish_manager.publish_all(now)
 
-        # wait for new control message
-        last_stamp = self._latest_control.stamp
-        last_second = last_stamp.sec + last_stamp.nanosec * 1e-9
-
-        if self._current_ros_time - last_second >= 0.03:
-            wait_time = max(self._control_timeout_sec, float(0.01))
-            deadline = time.time() + wait_time
+        if self._rt_cfg.get("wait_control", False):
+            deadline = time.time() + self._control_timeout_sec
             while time.time() < deadline:
                 if (
-                    self._latest_control_stamp is not None
-                    and self._latest_control_stamp != last_stamp
+                    self._latest_control is not None
+                    and self._latest_control.stamp.sec * 1e9
+                    + self._latest_control.stamp.nanosec
+                    > self._latest_control_stamp
                 ):
                     break
                 time.sleep(0.001)
+
+        print(
+            f"Latest control stamp: {self._latest_control.stamp.sec * 1e9 + self._latest_control.stamp.nanosec if self._latest_control is not None else None}, Current time: {self._current_ros_time*1e9}"
+        )
 
         if self._latest_control is None:
             logger.warning(
@@ -395,6 +405,10 @@ class AutowarePureAV:
             )
             return Ctrl(mode=CtrlMode.None_)
 
+        # Apply control
+        self._latest_control_stamp = (
+            self._latest_control.stamp.sec * 1e9 + self._latest_control.stamp.nanosec
+        )
         speed = float(self._latest_control.longitudinal.velocity)
         steering = float(self._latest_control.lateral.steering_tire_angle)
 
@@ -653,6 +667,10 @@ class AutowarePureAV:
             autoware_adapi_v1_msgs_srv.InitializeLocalization,
             "/api/localization/initialize",
         )
+        self._client_clear_route = self._node.create_client(
+            autoware_adapi_v1_msgs_srv.ClearRoute,
+            "/api/routing/clear_route",
+        )
         self._client_set_route_points = self._node.create_client(
             autoware_adapi_v1_msgs_srv.SetRoutePoints,
             "/api/routing/set_route_points",
@@ -761,7 +779,6 @@ class AutowarePureAV:
 
     def _on_control(self, msg: autoware_control_msgs.Control) -> None:
         self._latest_control = msg
-        self._latest_control_stamp = msg.stamp
 
     def _on_autoware_state(self, msg: autoware_system_msgs.AutowareState) -> None:
         self._vehicle_state = msg.state
@@ -842,6 +859,21 @@ class AutowarePureAV:
 
     def _call_set_route_points(self, sps: ScenarioPack) -> None:
         assert self._node is not None
+        # Clear route
+        req = autoware_adapi_v1_msgs_srv.ClearRoute.Request()
+        fut = self._client_clear_route.call_async(req)
+        start = time.time()
+        while rclpy.ok() and not fut.done() and time.time() - start < self._timeout_sec:
+            time.sleep(0.01)
+        res = fut.result()
+        if res is None or not res.status.success:
+            status_msg = getattr(res.status, "message", None) if res else "no response"
+            code = getattr(res.status, "code", "unknown") if res else "no response"
+            succ = getattr(res.status, "success", "unknown") if res else "no response"
+            msg = (
+                f"ClearRoute failed: code={code}, success={succ}, message={status_msg}"
+            )
+            raise RuntimeError(msg)
 
         req = autoware_adapi_v1_msgs_srv.SetRoutePoints.Request()
         req.header.frame_id = "map"
@@ -984,7 +1016,7 @@ class AutowarePureAV:
             kin.orientation_availability = (
                 2  # (0:UNAVAILABLE, 1:SIGN_UNKNOWN, 2:AVAILABLE)
             )
-            kin.has_position_covariance = False
+            kin.has_position_covariance = True
 
             # Pose
             kin.pose_with_covariance.pose.position.x = ag.kinematic.x
@@ -995,12 +1027,22 @@ class AutowarePureAV:
             kin.pose_with_covariance.pose.orientation.z = qz
             kin.pose_with_covariance.pose.orientation.w = qw
 
+            sx, sy, sz = 0.05, 0.05, 0.10  # meters
+            syaw = 0.017  # rad (≈1 deg)
+
+            kin.pose_with_covariance.covariance[0] = sx * sx
+            kin.pose_with_covariance.covariance[7] = sy * sy
+            kin.pose_with_covariance.covariance[14] = sz * sz
+            kin.pose_with_covariance.covariance[35] = syaw * syaw
+
             # Twist
             kin.has_twist = True
+            kin.twist_with_covariance.twist.linear.x = ag.kinematic.speed
+            kin.twist_with_covariance.twist.angular.z = 0.0
             # TODO: Agent's twist calculation
             kin.has_twist_covariance = False
-            agent_speed = ag.kinematic.speed
-            kin.twist_with_covariance.twist.linear.x = agent_speed
+            # agent_speed = ag.kinematic.speed
+            # kin.twist_with_covariance.twist.linear.x = agent_speed
 
             obj.kinematics = kin
             msg.objects.append(obj)
@@ -1089,7 +1131,12 @@ class AutowarePureAV:
     def _publish_steering_report(self, t: rclpy.time.Time) -> None:
         msg = autoware_vehicle_msgs.SteeringReport()
         msg.stamp = t.to_msg()
-        msg.steering_tire_angle = self._latest_control.lateral.steering_tire_angle
+        angle = (
+            self._latest_control.lateral.steering_tire_angle
+            if self._latest_control
+            else 0.0
+        )
+        msg.steering_tire_angle = angle
         self._steering_report_pub.publish(msg)
 
     def _publish_velocity_report(self, t: rclpy.time.Time) -> None:
