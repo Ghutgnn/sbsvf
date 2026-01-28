@@ -179,8 +179,31 @@ class EsminiAdapter:
     def _setup_function_signatures(self):
         se = self.se
 
-        se.SE_GetObjectState.argtypes = [ct.c_int, ct.c_void_p]
-        se.SE_GetObjectState.restype = None
+        # SE_DLL_API int SE_GetObjectState(int object_id, SE_ScenarioObjectState *state);
+        se.SE_GetObjectState.argtypes = [ct.c_int, ct.POINTER(SEScenarioObjectState)]
+        se.SE_GetObjectState.restype = ct.c_int
+
+        # SE_DLL_API float SE_GetObjectAcceleration(int object_id);
+        se.SE_GetObjectAcceleration.argtypes = [ct.c_int]
+        se.SE_GetObjectAcceleration.restype = ct.c_float
+
+        # SE_DLL_API int SE_GetObjectAngularAcceleration(int object_id, float *h_acc, float *p_acc, float *r_acc);
+        se.SE_GetObjectAngularAcceleration.argtypes = [
+            ct.c_int,
+            ct.POINTER(ct.c_float),
+            ct.POINTER(ct.c_float),
+            ct.POINTER(ct.c_float),
+        ]
+        se.SE_GetObjectAngularAcceleration.restype = ct.c_int
+
+        # SE_DLL_API int SE_GetObjectAngularVelocity(int object_id, float *h_rate, float *p_rate, float *r_rate);
+        se.SE_GetObjectAngularVelocity.argtypes = [
+            ct.c_int,
+            ct.POINTER(ct.c_float),
+            ct.POINTER(ct.c_float),
+            ct.POINTER(ct.c_float),
+        ]
+        se.SE_GetObjectAngularVelocity.restype = ct.c_int
 
         # SE_DLL_API const char *SE_GetObjectTypeName(int object_id)
         # se.SE_GetObjectTypeName.argtypes = [ct.c_int]
@@ -342,8 +365,34 @@ class EsminiAdapter:
 
         # Update object state
         for i in range(0, self.obj_count):
+            # Get object state
             obj_state = SEScenarioObjectState()
-            se.SE_GetObjectState(se.SE_GetId(i), ct.byref(obj_state))
+            ret_state = se.SE_GetObjectState(se.SE_GetId(i), ct.byref(obj_state))
+
+            # Get object acceleration
+            obj_accel = se.SE_GetObjectAcceleration(se.SE_GetId(i))
+
+            # Get object angular velocity
+            h_rate = ct.c_float()
+            p_rate = ct.c_float()
+            r_rate = ct.c_float()
+            ret_rate = se.SE_GetObjectAngularVelocity(
+                se.SE_GetId(i), ct.byref(h_rate), ct.byref(p_rate), ct.byref(r_rate)
+            )
+
+            # Get object angular acceleration
+            h_acc = ct.c_float()
+            p_acc = ct.c_float()
+            r_acc = ct.c_float()
+            ret_acc = se.SE_GetObjectAngularAcceleration(
+                se.SE_GetId(i), ct.byref(h_acc), ct.byref(p_acc), ct.byref(r_acc)
+            )
+
+            if ret_state != 0:
+                logger.warning(f"SE_GetObjectState failed for object id {i}")
+                print(f"ret = {ret_state}, id = {se.SE_GetId(i)}")
+                continue
+
             kinematic = ObjectKinematic(
                 time_ns=int(obj_state.timestamp * 1e9),
                 x=float(obj_state.x),
@@ -351,6 +400,9 @@ class EsminiAdapter:
                 z=float(obj_state.z),
                 yaw=float(obj_state.h),
                 speed=float(obj_state.speed),
+                accel=float(obj_accel),
+                yaw_rate=float(h_rate.value) if ret_rate == 0 else 0.0,
+                yaw_acc=float(h_acc.value) if ret_acc == 0 else 0.0,
             )
             self.objects[i].update(kinematic)
         return self.objects
@@ -514,12 +566,6 @@ class EsminiAdapter:
 
             self.objects.append(obj)
 
-        # Apply ego vehicle's init speed setting
-        # self.objects[0].kinematic.speed = sps.ego.spawn.speed / 3.6  # km/h to m/s
-        # self.se.SE_ReportObjectSpeed(
-        #     0,
-        #     self.objects[0].kinematic.speed,
-        # )
         # Create ego vehicle helper
         self.ego_car = Vehicle(
             self.se,
@@ -535,9 +581,3 @@ class EsminiAdapter:
     def should_quit(self):
         return self.se.SE_GetQuitFlag()
 
-    # def _get_ctrl_input(ctrl: Ctrl):
-    #     # Control type I: binary control
-    #     pedal = ctrl.payload.get("pedal", 0) if ctrl is not None else 0
-    #     wheel = ctrl.payload.get("wheel", 0) if ctrl is not None else 0
-
-    #     return pedal, wheel

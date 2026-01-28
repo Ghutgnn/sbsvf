@@ -147,7 +147,6 @@ class AutowarePureAV:
         self._kinematic: ObjectKinematic = ObjectKinematic()
         self._prev_kinematic: ObjectKinematic = ObjectKinematic()
         self._prev_prev_kinematic: ObjectKinematic = ObjectKinematic()
-        self._imu_state = sensor_msgs.Imu()
         self._quit_flag: bool = False
         self._last_error: Optional[str] = None
         self._agents: List[ObjectState] = []
@@ -952,6 +951,7 @@ class AutowarePureAV:
         msg.pose.pose.orientation.w = qw
 
         msg.twist.twist.linear.x = self._kinematic.speed
+        msg.twist.twist.angular.z = self._kinematic.yaw_rate
 
         self._kinematic_state_pub.publish(msg)
 
@@ -960,8 +960,8 @@ class AutowarePureAV:
         accel = geometry_msgs.AccelWithCovarianceStamped()
         accel.header.stamp = now
         accel.header.frame_id = "base_link"
-        accel.accel.accel.linear = self._imu_state.linear_acceleration
-        accel.accel.accel.angular = self._imu_state.angular_velocity
+        accel.accel.accel.linear.x = self._kinematic.accel
+        accel.accel.accel.angular.z = self._kinematic.yaw_acc
         self._accel_pub.publish(accel)
 
     def _publish_dynamic_objects(self, t: rclpy.time.Time) -> None:
@@ -1146,8 +1146,7 @@ class AutowarePureAV:
         msg.header.frame_id = "base_link"
         msg.longitudinal_velocity = self._kinematic.speed
         msg.lateral_velocity = 0.0
-        # TODO: 直接從sim拿 heading rate
-        msg.heading_rate = self._imu_state.angular_velocity.z
+        msg.heading_rate = self._kinematic.yaw_rate
 
         self._velocity_report_pub.publish(msg)
 
@@ -1179,16 +1178,11 @@ class AutowarePureAV:
     # ------------------------------------------------------------------
     # helpers
     # ------------------------------------------------------------------
-    # def _convert_float_to_ros_time(self, t: float) -> rclpy.time.Time:
-    #     sec = int(t)
-    #     nanosec = int((t - sec) * 1e9)
-    #     return rclpy.time.Time(seconds=sec, nanoseconds=nanosec)
 
     def _update_kinematic(self, kinematic: ObjectKinematic) -> None:
         self._prev_prev_kinematic = self._prev_kinematic
         self._prev_kinematic = self._kinematic
         self._kinematic = kinematic
-        self._calc_imu_state()
 
     def _setup_sps(self, sps: ScenarioPack) -> bool:
         """
@@ -1216,73 +1210,6 @@ class AutowarePureAV:
         self._map_path = map_full_path
 
         return is_changed
-
-    def _calc_imu_state(self) -> None:
-        """根據 kinematic 計算 IMU 狀態
-        修正重點：
-        1. Y軸變數修正
-        2. 加速度轉回 Body Frame
-        3. 處理 Yaw 角度跳變
-        """
-        # 避免除以 0
-        dt1 = max((self._kinematic.time_ns - self._prev_kinematic.time_ns) * 1e-9, 1e-5)
-        dt2 = max(
-            (self._prev_kinematic.time_ns - self._prev_prev_kinematic.time_ns) * 1e-9,
-            1e-5,
-        )
-        dt_avg = (dt1 + dt2) / 2.0
-
-        # 1. 計算全域速度 (Global Velocity)
-        cur_v_x = (self._kinematic.x - self._prev_kinematic.x) / dt1
-        cur_v_y = (self._kinematic.y - self._prev_kinematic.y) / dt1
-
-        prev_v_x = (self._prev_kinematic.x - self._prev_prev_kinematic.x) / dt2
-        prev_v_y = (self._prev_kinematic.y - self._prev_prev_kinematic.y) / dt2
-
-        # 2. 計算全域加速度 (Global Acceleration)
-        acc_x_global = (cur_v_x - prev_v_x) / dt_avg
-        acc_y_global = (cur_v_y - prev_v_y) / dt_avg
-
-        # 3. [關鍵] 將全域加速度轉回車身座標 (Map -> Base_Link)
-        # 使用旋轉矩陣:
-        # ax_body =  ax_global * cos(yaw) + ay_global * sin(yaw)
-        # ay_body = -ax_global * sin(yaw) + ay_global * cos(yaw)
-        current_yaw = self._kinematic.yaw
-        cos_yaw = math.cos(current_yaw)
-        sin_yaw = math.sin(current_yaw)
-
-        linear_acceleration = geometry_msgs.Vector3()
-        linear_acceleration.x = acc_x_global * cos_yaw + acc_y_global * sin_yaw
-        linear_acceleration.y = -acc_x_global * sin_yaw + acc_y_global * cos_yaw
-        linear_acceleration.z = 0.0  # 2D 平面假設，忽略重力
-
-        # 4. 計算角速度 (Angular Velocity) 並處理 Wrap-around
-        diff_yaw = self._kinematic.yaw - self._prev_kinematic.yaw
-
-        # [修正] 處理角度跨越 +-PI 的情況
-        while diff_yaw > math.pi:
-            diff_yaw -= 2.0 * math.pi
-        while diff_yaw < -math.pi:
-            diff_yaw += 2.0 * math.pi
-
-        angular_velocity = geometry_msgs.Vector3()
-        angular_velocity.x = 0.0
-        angular_velocity.y = 0.0
-        # 這裡建議使用 dt1 (當前區間) 比較能代表當下瞬間角速度
-        angular_velocity.z = diff_yaw / dt1
-
-        # 賦值
-        self._imu_state.linear_acceleration = linear_acceleration
-        self._imu_state.angular_velocity = angular_velocity
-        # self._imu_state.header.stamp = self._node.get_clock().now().to_msg()
-        # self._imu_state.header.stamp = self._convert_float_to_ros_time(
-        #     self._current_ros_time
-        # ).to_msg()
-        self._imu_state.header.stamp = Time(
-            nanoseconds=self._current_ros_time_ns
-        ).to_msg()
-
-        self._imu_state.header.frame_id = "base_link"
 
     @staticmethod
     def _yaw_to_quat(yaw: float) -> tuple[float, float]:
