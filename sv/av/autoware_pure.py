@@ -228,19 +228,6 @@ class AutowarePureAV:
         self._prev_kinematic = ObjectKinematic()
         self._prev_prev_kinematic = ObjectKinematic()
 
-        # init_kinematic = ObjectKinematic.from_dict(ipos.to_dict())
-        # init_kinematic.time_ns = self._current_ros_time
-
-        # # TODO: check position type consistency
-        # init_kinematic.yaw = (
-        #     ipos.h
-        # )  # Position type and VehicleKinematic yaw consistency
-
-        # # TODO: autoware init speed condition
-        # init_kinematic.speed = 0.0  # Autoware state change condition
-
-        # if init_obs is None or len(init_obs) == 0:
-
         init_kinematic = init_obs[0].kinematic
         init_kinematic.time_ns = self._current_ros_time_ns
         self._agents = init_obs[1:] if init_obs and len(init_obs) > 1 else []
@@ -293,10 +280,18 @@ class AutowarePureAV:
             self._last_error = str(e)
             raise RuntimeError("Failed to set Autoware route points.") from e
 
-        # Wait for route to be set
         start = time.time()
         while (
-            self._vehicle_state != autoware_system_msgs.AutowareState.WAITING_FOR_ENGAGE
+            self._vehicle_state == autoware_system_msgs.AutowareState.WAITING_FOR_ROUTE
+            or self._vehicle_state
+            > autoware_system_msgs.AutowareState.PLANNING  # When autoware reset (after second round), ego state may be still in WAITING_FOR_ENGAGE for a while, so wait here to ensure re-planning
+        ) and time.time() - start < self._timeout_sec:
+            logger.info(f"Waiting for autoware to set route... ")
+            time.sleep(0.1)
+
+        start = time.time()
+        while (
+            self._vehicle_state == autoware_system_msgs.AutowareState.PLANNING
             and time.time() - start < self._timeout_sec
         ):
             logger.info(f"Waiting for autoware planning... ")
