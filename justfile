@@ -115,15 +115,10 @@ clean:
 
 
 
-cp:
+setup:
   #!/usr/bin/env bash
   cp sbsvf.launch.xml /opt/autoware/share/autoware_launch/launch/ 
-# {
-#     "python.analysis.extraPaths": [
-#         "./opt/autoware/local/lib/python3.10/dist-packages",
-#         "./lib/python3/dist-packages/pip/_vendor"
-#     ]
-# }
+  python3 aw_setup.py --apply
 
 
 hello:
@@ -140,8 +135,7 @@ hello:
     system_run_mode:=planning_simulation \
     launch_system_monitor:=false \
     launch_dummy_diag_publisher:=true \
-    is_simulation:=true \
-    use_sim_time:=true
+    is_simulation:=true 
 
 # hello:
 #   ros2 launch autoware_launch \
