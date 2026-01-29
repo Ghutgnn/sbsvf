@@ -128,7 +128,8 @@ TYPE_MAP = {
 
 
 class EsminiAdapter:
-    def __init__(self, cfg_path: Union[str, Path]):
+    def __init__(self, output_dir: Path, cfg_path: Union[str, Path]):
+        self._output_dir = output_dir
         self._time_ns = 0
         self.cfg = get_cfg(cfg_path)
         self.esmini_home = self.cfg.get("esmini_home", "/opt/esmini/")
@@ -148,7 +149,8 @@ class EsminiAdapter:
         record = self.cfg.get("record", False)
 
         if "log_file_path" in self.cfg:
-            self.se.SE_SetLogFilePath(self.cfg["log_file_path"].encode())
+            log_file_path = self._output_dir / self.cfg["log_file_path"]
+            self.se.SE_SetLogFilePath(str(log_file_path).encode())
         else:
             logger.info("No log_file_path specified; using default esmini_log.txt")
             self.se.SE_SetLogFilePath(b"./esmini_log.txt")
@@ -170,9 +172,9 @@ class EsminiAdapter:
             self.se.SE_SetOptionPersistent(b"disable_stdout")
 
         if self.cfg.get("dat_file_path", None) is not None:
-            dat_file_path = self.cfg["dat_file_path"]
+            dat_file_path = self._output_dir / self.cfg["dat_file_path"]
             logger.info(f"Setting esmini dat file path: {dat_file_path}")
-            self.se.SE_SetDatFilePath(dat_file_path.encode())
+            self.se.SE_SetDatFilePath(str(dat_file_path).encode())
 
         return use_viewer, threads, record
 
@@ -481,7 +483,9 @@ class EsminiAdapter:
     def _get_parameter(self, sps: ScenarioPack) -> dict[str, Any]:
         self
 
-    def reset(self, sps: ScenarioPack, params: Optional[dict] = None):
+    def reset(self, output_dir: Path, sps: ScenarioPack, params: Optional[dict] = None):
+        self._output_dir = output_dir
+
         self.stop()
 
         # Reset time
@@ -580,4 +584,3 @@ class EsminiAdapter:
     # define a function returning if the simulator need to stop
     def should_quit(self):
         return self.se.SE_GetQuitFlag()
-

@@ -70,7 +70,8 @@ class AutowarePureAV:
     - should_quit(): Decide whether to quit based on motion state / error / process status
     """
 
-    def __init__(self, cfg_path: Path):
+    def __init__(self, output_dir: Path, cfg_path: Path):
+        self._output_dir = output_dir
         cfg = get_cfg(Path(cfg_path))
         self._autoware_cfg = cfg.get("autoware", {})
 
@@ -85,8 +86,8 @@ class AutowarePureAV:
         self._launch_file = launch_cfg.get("file", "sbsvf.launch.xml")
         self._headless = bool(launch_cfg.get("headless", True))
         self._extra_launch_args: List[str] = list(launch_cfg.get("extra_args", []))
-        self._autoware_log_path = Path(
-            launch_cfg.get("log_path", "/tmp/autoware_launch.log")
+        self._autoware_log_path = self._output_dir / launch_cfg.get(
+            "log_path", "autoware_launch.log"
         )
 
         data_cfg = self._autoware_cfg.get("data", {})
@@ -185,7 +186,10 @@ class AutowarePureAV:
         logger.info("Autoware AV initialized and Autoware stack is ready.")
 
     def reset(
-        self, sps: ScenarioPack, init_obs: Optional[list[ObjectState]] = None
+        self,
+        output_dir: Path,
+        sps: ScenarioPack,
+        init_obs: Optional[list[ObjectState]] = None,
     ) -> None:
         """
         Reset AV internal state when simulator resets.
@@ -194,7 +198,7 @@ class AutowarePureAV:
         1. 如有換 map，就重啟 Autoware
         2. 用 AD API 設 initial pose / route
         """
-
+        self._output_dir = output_dir
         self._ensure_ros_node()
 
         # If the map has changed, restart Autoware process
@@ -469,13 +473,13 @@ class AutowarePureAV:
         self._publish_manager = PublishManager()
 
         # QoS profile:
-            # Reliability: RELIABLE
-            # History (Depth): KEEP_LAST (1)
-            # Durability: VOLATILE
-            # Lifespan: Infinite
-            # Deadline: Infinite
-            # Liveliness: AUTOMATIC
-            # Liveliness lease duration: Infinite
+        # Reliability: RELIABLE
+        # History (Depth): KEEP_LAST (1)
+        # Durability: VOLATILE
+        # Lifespan: Infinite
+        # Deadline: Infinite
+        # Liveliness: AUTOMATIC
+        # Liveliness lease duration: Infinite
 
         qos_profile = QoSProfile(depth=1)
 
@@ -869,25 +873,9 @@ class AutowarePureAV:
 
     def _call_set_route_points(self, sps: ScenarioPack) -> None:
         assert self._node is not None
-        # Clear route
-        req = autoware_adapi_v1_msgs_srv.ClearRoute.Request()
-        fut = self._client_clear_route.call_async(req)
-        start = time.time()
-        while rclpy.ok() and not fut.done() and time.time() - start < self._timeout_sec:
-            time.sleep(0.01)
-        res = fut.result()
-        if res is None or not res.status.success:
-            status_msg = getattr(res.status, "message", None) if res else "no response"
-            code = getattr(res.status, "code", "unknown") if res else "no response"
-            succ = getattr(res.status, "success", "unknown") if res else "no response"
-            msg = (
-                f"ClearRoute failed: code={code}, success={succ}, message={status_msg}"
-            )
-            raise RuntimeError(msg)
-
+        self._call_clear_route()
         req = autoware_adapi_v1_msgs_srv.SetRoutePoints.Request()
         req.header.frame_id = "map"
-        # req.header.stamp = self._node.get_clock().now().to_msg()
         req.header.stamp = Time(nanoseconds=self._current_ros_time_ns).to_msg()
 
         gp = sps.ego.goal.position
@@ -917,6 +905,23 @@ class AutowarePureAV:
             code = getattr(res.status, "code", "unknown") if res else "no response"
             succ = getattr(res.status, "success", "unknown") if res else "no response"
             msg = f"SetRoutePoints failed: code={code}, success={succ}, message={status_msg}"
+            raise RuntimeError(msg)
+
+    def _call_clear_route(self) -> None:
+        # Clear route
+        req = autoware_adapi_v1_msgs_srv.ClearRoute.Request()
+        fut = self._client_clear_route.call_async(req)
+        start = time.time()
+        while rclpy.ok() and not fut.done() and time.time() - start < self._timeout_sec:
+            time.sleep(0.01)
+        res = fut.result()
+        if res is None or not res.status.success:
+            status_msg = getattr(res.status, "message", None) if res else "no response"
+            code = getattr(res.status, "code", "unknown") if res else "no response"
+            succ = getattr(res.status, "success", "unknown") if res else "no response"
+            msg = (
+                f"ClearRoute failed: code={code}, success={succ}, message={status_msg}"
+            )
             raise RuntimeError(msg)
 
     def _call_change_to_autonomous(self) -> None:

@@ -6,7 +6,7 @@ autoware:
     package: "autoware_launch"
     file: "sbsvf.launch.xml"
     headless: false
-    log_path: "/tmp/autoware_launch.log"
+    log_path: "./autoware_launch.log"
     # extra_args:
     # - "launch_rviz:=false"
     # - "launch_system_monitor:=false"

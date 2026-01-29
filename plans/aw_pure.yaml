@@ -1,5 +1,5 @@
-# plans/esmini_embed.yaml
-name: esmini_embedded_controller_distribution
+# plans/aw_pure.yaml
+name: autoware_pure
 mode: A # A: planning-only, B: full-stack (ROS2)
 runtime:
   dt: 0.01

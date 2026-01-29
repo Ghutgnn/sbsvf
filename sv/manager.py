@@ -11,13 +11,6 @@ from sv.utils.sps import ScenarioPack
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 
-
-# import sv.sim
-# import sv.av
-# import sv.bridge
-# import sv.monitor
-# import sv.sampler
-
 logger = logging.getLogger(__name__)
 
 
@@ -33,6 +26,7 @@ class Manager:
         runner = Runner(
             plan_name=self.plan_name,
             runtime_cfg=self.config.get("runtime", {}),
+            artifacts_cfg=self.config.get("artifacts", {}),
             sim_cfg=self.config["simulator"],
             av_cfg=self.config["av"],
             bridge_cfg=self.config["bridge"],

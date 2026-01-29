@@ -27,6 +27,7 @@ class Runner:
     def __init__(
         self,
         runtime_cfg: dict,
+        artifacts_cfg: dict,
         plan_name: str,
         sim_cfg: dict,
         av_cfg: dict,
@@ -37,17 +38,27 @@ class Runner:
     ):
         self.plan_name = plan_name
         self.runtime_cfg = runtime_cfg
+        self.artifacts_cfg = artifacts_cfg
+        # use current datetime + plan_name as unique id
+        self._id = f"{plan_name}_{int(time())}"
+        base = Path(artifacts_cfg.get("output_dir", "artifacts")).expanduser().resolve()
+        self.output_dir = base / self._id
+        self.output_dir.mkdir(parents=True, exist_ok=True)
         self.sps = sps
 
         # SIM
         module = importlib.import_module(sim_cfg["module"].split(":")[0])
         sim_class = getattr(module, sim_cfg["module"].split(":")[1])
-        self.sim = sim_class(cfg_path=sim_cfg.get("cfg_path", None))
+        self.sim = sim_class(
+            output_dir=self.output_dir, cfg_path=sim_cfg.get("cfg_path", None)
+        )
 
         # AV
         module = importlib.import_module(av_cfg["module"].split(":")[0])
         av_class = getattr(module, av_cfg["module"].split(":")[1])
-        self.av = av_class(cfg_path=av_cfg.get("cfg_path", None))
+        self.av = av_class(
+            output_dir=self.output_dir, cfg_path=av_cfg.get("cfg_path", None)
+        )
 
         # Bridge
         module = importlib.import_module(bridge_cfg["module"].split(":")[0])
@@ -113,16 +124,19 @@ class Runner:
                         break
 
                     logger.info(f"Running scenario with parameters: {params}")
-
+                    cur_output_dir = self.output_dir / f"iteration_{i+1}"
+                    cur_output_dir.mkdir(parents=True, exist_ok=True)
                     try:
-                        self.run_concrete(self.runtime_cfg, self.sps, params)
+                        self.run_concrete(
+                            cur_output_dir, self.runtime_cfg, self.sps, params
+                        )
                     except Exception:
                         logger.exception(f"Scenario failed at iteration {i+1}")
                         continue
             else:
                 logger.info("Running a single concrete scenario.")
                 try:
-                    self.run_concrete(self.runtime_cfg, self.sps)
+                    self.run_concrete(self.output_dir, self.runtime_cfg, self.sps)
                 except Exception:
                     logger.exception("Scenario failed")
 
@@ -142,13 +156,14 @@ class Runner:
 
     def run_concrete(
         self,
+        output_dir: Path,
         runtime_cfg: dict,
         sps: ScenarioPack,
         params: Optional[dict[str, Any]] = None,
     ) -> None:
         raw_obs = None
         try:
-            raw_obs = self.sim.reset(sps, params)
+            raw_obs = self.sim.reset(output_dir, sps, params)
         except Exception as e:
             logger.error(f"Simulator reset failed: {e}")
             return
@@ -160,7 +175,7 @@ class Runner:
             return
 
         try:
-            ctrl_from_av = self.av.reset(sps, obs_for_av)
+            ctrl_from_av = self.av.reset(output_dir, sps, obs_for_av)
         except Exception as e:
             logger.error(f"AV reset failed: {e}")
             return
