@@ -46,47 +46,47 @@ class Runner:
         self.sps = ScenarioPack.from_dict(scenario_spec, map_spec)
 
         # SIM
-        module = importlib.import_module(sim_spec["module"].split(":")[0])
-        sim_class = getattr(module, sim_spec["module"].split(":")[1])
+        module = importlib.import_module(sim_spec["module_path"].split(":")[0])
+        sim_class = getattr(module, sim_spec["module_path"].split(":")[1])
         self.sim = sim_class(
-            output_dir=self.output_dir, cfg_path=sim_spec.get("cfg_path", None)
+            output_dir=self.output_dir, cfg_path=sim_spec.get("config_path", None)
         )
 
         # AV
-        module = importlib.import_module(av_spec["module"].split(":")[0])
-        av_class = getattr(module, av_spec["module"].split(":")[1])
+        module = importlib.import_module(av_spec["module_path"].split(":")[0])
+        av_class = getattr(module, av_spec["module_path"].split(":")[1])
         self.av = av_class(
-            output_dir=self.output_dir, cfg_path=av_spec.get("cfg_path", None)
+            output_dir=self.output_dir, cfg_path=av_spec.get("config_path", None)
         )
 
         # Bridge
         # TODO: default to NoneBridge
-        bridge_spec = {"name": "none", "module": "sv.bridge.none:NoneBridge"}
+        bridge_spec = {"name": "none", "module_path": "sv.bridge.none:NoneBridge"}
 
-        module = importlib.import_module(bridge_spec["module"].split(":")[0])
-        bridge_class = getattr(module, bridge_spec["module"].split(":")[1])
-        self.bridge = bridge_class(cfg_path=bridge_spec.get("cfg_path", None))
+        module = importlib.import_module(bridge_spec["module_path"].split(":")[0])
+        bridge_class = getattr(module, bridge_spec["module_path"].split(":")[1])
+        self.bridge = bridge_class(cfg_path=bridge_spec.get("config_path", None))
 
         # Monitor
         # TODO: default to defaultMonitor
         monitor_spec = {
             "name": "default",
-            "module": "sv.monitor.default:defaultMonitor",
-            "cfg_path": "configs/monitor/default.yaml",
+            "module_path": "sv.monitor.default:defaultMonitor",
+            "config_path": "configs/monitor/default.yaml",
         }
 
-        module = importlib.import_module(monitor_spec["module"].split(":")[0])
-        monitor_class = getattr(module, monitor_spec["module"].split(":")[1])
+        module = importlib.import_module(monitor_spec["module_path"].split(":")[0])
+        monitor_class = getattr(module, monitor_spec["module_path"].split(":")[1])
         self.monitor = monitor_class(
-            cfg_path=monitor_spec.get("cfg_path", None),
+            cfg_path=monitor_spec.get("config_path", None),
             plan_name=self._id,
         )
 
         if self.sps.param_range_file is not None:
             logger.info("Parameter range file provided: %s", self.sps.param_range_file)
             # param_sampler
-            module = importlib.import_module(sampler_spec["module"].split(":")[0])
-            sampler_class = getattr(module, sampler_spec["module"].split(":")[1])
+            module = importlib.import_module(sampler_spec["module_path"].split(":")[0])
+            sampler_class = getattr(module, sampler_spec["module_path"].split(":")[1])
             self.param_sampler = sampler_class(
                 param_range_file=self.sps.param_range_file,
                 past_results=None,
