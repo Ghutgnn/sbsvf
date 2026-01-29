@@ -1,4 +1,5 @@
 from pathlib import Path
+from typing import Any
 import typer
 import logging
 
@@ -54,6 +55,21 @@ def run_docker(plan_path: str) -> None:
 
 
 @app.command()
+def run_one(task_path) -> None:
+    with open(task_path, "r", encoding="utf-8") as f:
+        task = yaml.safe_load(f)
+    Runner(
+        task_spec=task["task"],
+        runtime_spec=task.get("runtime", {}),
+        sim_spec=task["simulator"],
+        av_spec=task["av"],
+        sampler_spec=task.get("sampler", {}),
+        scenario_spec=task["scenario"],
+        map_spec=task["map"],
+    ).exec()
+
+
+@app.command()
 def run_logical(
     plan: str = typer.Argument(..., help="Path to test plan yaml"),
     scenario: str = typer.Argument(..., help="Path to ONE logical scenario yaml"),
@@ -72,12 +88,12 @@ def run_logical(
     sps = ScenarioPack.from_yaml(scenario)
 
     runner = Runner(
-        plan_name=plan_cfg["name"],
-        sim_cfg=plan_cfg["simulator"],
-        av_cfg=plan_cfg["av"],
+        worker_id=plan_cfg["name"],
+        sim_spec=plan_cfg["simulator"],
+        av_spec=plan_cfg["av"],
         bridge_cfg=plan_cfg["bridge"],
         monitor_cfg=plan_cfg["monitor"],
-        sampler_cfg=plan_cfg.get("sampler", {}),
+        sampler_spec=plan_cfg.get("sampler", {}),
         sps=sps,
     )
 

@@ -23,6 +23,10 @@ up:
 down:
 	docker compose down
 
+gogo:
+  python3 -m sv.cli run-one ./plans/one.yaml
+
+
 run_aw:
 	python3 -m sv.cli run ./plans/aw_test.yaml
 

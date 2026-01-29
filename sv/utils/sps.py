@@ -183,6 +183,32 @@ class ScenarioPack:
         )
 
     @classmethod
+    def from_dict(
+        cls, scenario_spec: Dict[str, Any], map_spec: Dict[str, Any]
+    ) -> "ScenarioPack":
+        name = scenario_spec["title"]
+        scenarios = {"xosc": Path(scenario_spec["scenario_path"]).resolve()}
+        maps = {
+            "xodr": Path(map_spec.get("xodr_path", None)).resolve(),
+            "osm": Path(map_spec.get("osm_path", None)).resolve(),
+        }
+        ego = EgoConfig.from_dict(
+            scenario_spec["ego"],
+            xodr_path=maps["xodr"],
+        )
+        param_range_file = scenario_spec.get("param_path", None)
+        if param_range_file is not None:
+            param_range_file = Path(param_range_file).resolve()
+
+        return cls(
+            name=name,
+            maps=maps,
+            scenarios=scenarios,
+            ego=ego,
+            param_range_file=param_range_file,
+        )
+
+    @classmethod
     def from_yaml(cls, path: str) -> "ScenarioPack":
         with open(path, "r", encoding="utf-8") as f:
             data = yaml.safe_load(f)

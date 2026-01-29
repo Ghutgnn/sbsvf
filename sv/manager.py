@@ -24,14 +24,14 @@ class Manager:
     def _run_one_scenario(self, scenario_pack: ScenarioPack):
         logger.info(f"Running scenario: {scenario_pack.name}")
         runner = Runner(
-            plan_name=self.plan_name,
-            runtime_cfg=self.config.get("runtime", {}),
-            artifacts_cfg=self.config.get("artifacts", {}),
-            sim_cfg=self.config["simulator"],
-            av_cfg=self.config["av"],
+            worker_id=self.plan_name,
+            runtime_spec=self.config.get("runtime", {}),
+            task_spec=self.config.get("artifacts", {}),
+            sim_spec=self.config["simulator"],
+            av_spec=self.config["av"],
             bridge_cfg=self.config["bridge"],
             monitor_cfg=self.config["monitor"],
-            sampler_cfg=self.config.get("sampler", {}),
+            sampler_spec=self.config.get("sampler", {}),
             sps=scenario_pack,
         )
         runner.exec()

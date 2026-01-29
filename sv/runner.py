@@ -26,58 +26,67 @@ logger = logging.getLogger(__name__)
 class Runner:
     def __init__(
         self,
-        runtime_cfg: dict,
-        artifacts_cfg: dict,
-        plan_name: str,
-        sim_cfg: dict,
-        av_cfg: dict,
-        bridge_cfg: dict,
-        monitor_cfg: dict,
-        sampler_cfg: dict,
-        sps: ScenarioPack,
+        task_spec: dict[str, Any],
+        runtime_spec: dict[str, Any],
+        sim_spec: dict[str, Any],
+        av_spec: dict[str, Any],
+        sampler_spec: dict[str, Any],
+        scenario_spec: dict[str, Any],
+        map_spec: dict[str, Any],
+        # bridge_cfg: dict,
+        # monitor_cfg: dict,
+        # sps: ScenarioPack,
     ):
-        self.plan_name = plan_name
-        self.runtime_cfg = runtime_cfg
-        self.artifacts_cfg = artifacts_cfg
-        # use current datetime + plan_name as unique id
-        self._id = f"{plan_name}_{int(time())}"
-        base = Path(artifacts_cfg.get("output_dir", "artifacts")).expanduser().resolve()
+        self._runtime_spec = runtime_spec
+        self._id = task_spec.get("worker_id", "default_worker_id")
+
+        base = Path(task_spec.get("output_dir", "artifacts")).expanduser().resolve()
         self.output_dir = base / self._id
         self.output_dir.mkdir(parents=True, exist_ok=True)
-        self.sps = sps
+        self.sps = ScenarioPack.from_dict(scenario_spec, map_spec)
 
         # SIM
-        module = importlib.import_module(sim_cfg["module"].split(":")[0])
-        sim_class = getattr(module, sim_cfg["module"].split(":")[1])
+        module = importlib.import_module(sim_spec["module"].split(":")[0])
+        sim_class = getattr(module, sim_spec["module"].split(":")[1])
         self.sim = sim_class(
-            output_dir=self.output_dir, cfg_path=sim_cfg.get("cfg_path", None)
+            output_dir=self.output_dir, cfg_path=sim_spec.get("cfg_path", None)
         )
 
         # AV
-        module = importlib.import_module(av_cfg["module"].split(":")[0])
-        av_class = getattr(module, av_cfg["module"].split(":")[1])
+        module = importlib.import_module(av_spec["module"].split(":")[0])
+        av_class = getattr(module, av_spec["module"].split(":")[1])
         self.av = av_class(
-            output_dir=self.output_dir, cfg_path=av_cfg.get("cfg_path", None)
+            output_dir=self.output_dir, cfg_path=av_spec.get("cfg_path", None)
         )
 
         # Bridge
-        module = importlib.import_module(bridge_cfg["module"].split(":")[0])
-        bridge_class = getattr(module, bridge_cfg["module"].split(":")[1])
-        self.bridge = bridge_class(cfg_path=bridge_cfg.get("cfg_path", None))
+        # TODO: default to NoneBridge
+        bridge_spec = {"name": "none", "module": "sv.bridge.none:NoneBridge"}
+
+        module = importlib.import_module(bridge_spec["module"].split(":")[0])
+        bridge_class = getattr(module, bridge_spec["module"].split(":")[1])
+        self.bridge = bridge_class(cfg_path=bridge_spec.get("cfg_path", None))
 
         # Monitor
-        module = importlib.import_module(monitor_cfg["module"].split(":")[0])
-        monitor_class = getattr(module, monitor_cfg["module"].split(":")[1])
+        # TODO: default to defaultMonitor
+        monitor_spec = {
+            "name": "default",
+            "module": "sv.monitor.default:defaultMonitor",
+            "cfg_path": "configs/monitor/default.yaml",
+        }
+
+        module = importlib.import_module(monitor_spec["module"].split(":")[0])
+        monitor_class = getattr(module, monitor_spec["module"].split(":")[1])
         self.monitor = monitor_class(
-            cfg_path=monitor_cfg.get("cfg_path", None),
-            plan_name=plan_name,
+            cfg_path=monitor_spec.get("cfg_path", None),
+            plan_name=self._id,
         )
 
         if self.sps.param_range_file is not None:
             logger.info("Parameter range file provided: %s", self.sps.param_range_file)
             # param_sampler
-            module = importlib.import_module(sampler_cfg["module"].split(":")[0])
-            sampler_class = getattr(module, sampler_cfg["module"].split(":")[1])
+            module = importlib.import_module(sampler_spec["module"].split(":")[0])
+            sampler_class = getattr(module, sampler_spec["module"].split(":")[1])
             self.param_sampler = sampler_class(
                 param_range_file=self.sps.param_range_file,
                 past_results=None,
@@ -128,7 +137,7 @@ class Runner:
                     cur_output_dir.mkdir(parents=True, exist_ok=True)
                     try:
                         self.run_concrete(
-                            cur_output_dir, self.runtime_cfg, self.sps, params
+                            cur_output_dir, self._runtime_spec, self.sps, params
                         )
                     except Exception:
                         logger.exception(f"Scenario failed at iteration {i+1}")
@@ -136,7 +145,7 @@ class Runner:
             else:
                 logger.info("Running a single concrete scenario.")
                 try:
-                    self.run_concrete(self.output_dir, self.runtime_cfg, self.sps)
+                    self.run_concrete(self.output_dir, self._runtime_spec, self.sps)
                 except Exception:
                     logger.exception("Scenario failed")
 
@@ -157,7 +166,7 @@ class Runner:
     def run_concrete(
         self,
         output_dir: Path,
-        runtime_cfg: dict,
+        runtime_spec: dict,
         sps: ScenarioPack,
         params: Optional[dict[str, Any]] = None,
     ) -> None:
@@ -185,7 +194,7 @@ class Runner:
             logger.error(f"Bridge av_to_sim failed: {e}")
             return
 
-        dt_s = runtime_cfg.get("dt", -1)
+        dt_s = runtime_spec.get("dt", -1)
         dt_ns = int(dt_s * 1e9)
 
         use_real_time = False
