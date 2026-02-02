@@ -4,21 +4,8 @@ from typing import Any, Optional
 import logging
 from pathlib import Path
 import importlib
-import yaml
 
-from sv.interface import Sim, AV, Bridge, Monitor  # Protocols
-from sv.utils.control import Ctrl
 from sv.utils.sps import ScenarioPack
-
-from sv.registry import (
-    build_instance_from_registry,
-    SAMPLER_REGISTRY,
-    SIM_REGISTRY,
-    AV_REGISTRY,
-    BRIDGE_REGISTRY,
-    MONITOR_REGISTRY,
-)
-
 
 logger = logging.getLogger(__name__)
 
@@ -37,8 +24,11 @@ class Runner:
         # monitor_cfg: dict,
         # sps: ScenarioPack,
     ):
+        logging.info("Initializing Runner...")
+
         self._runtime_spec = runtime_spec
-        self._id = task_spec.get("worker_id", "default_worker_id")
+        self._id = task_spec.get("job_id", "default_worker_id")
+        print(f"Runner ID: {self._id}")
 
         base = Path(task_spec.get("output_dir", "artifacts")).expanduser().resolve()
         self.output_dir = base / self._id
@@ -46,47 +36,47 @@ class Runner:
         self.sps = ScenarioPack.from_dict(scenario_spec, map_spec)
 
         # SIM
-        module = importlib.import_module(sim_spec["module"].split(":")[0])
-        sim_class = getattr(module, sim_spec["module"].split(":")[1])
+        module = importlib.import_module(sim_spec["module_path"].split(":")[0])
+        sim_class = getattr(module, sim_spec["module_path"].split(":")[1])
         self.sim = sim_class(
-            output_dir=self.output_dir, cfg_path=sim_spec.get("cfg_path", None)
+            output_dir=self.output_dir, cfg_path=sim_spec.get("config_path", None)
         )
 
         # AV
-        module = importlib.import_module(av_spec["module"].split(":")[0])
-        av_class = getattr(module, av_spec["module"].split(":")[1])
+        module = importlib.import_module(av_spec["module_path"].split(":")[0])
+        av_class = getattr(module, av_spec["module_path"].split(":")[1])
         self.av = av_class(
-            output_dir=self.output_dir, cfg_path=av_spec.get("cfg_path", None)
+            output_dir=self.output_dir, cfg_path=av_spec.get("config_path", None)
         )
 
         # Bridge
         # TODO: default to NoneBridge
-        bridge_spec = {"name": "none", "module": "sv.bridge.none:NoneBridge"}
+        bridge_spec = {"name": "none", "module_path": "sv.bridge.none:NoneBridge"}
 
-        module = importlib.import_module(bridge_spec["module"].split(":")[0])
-        bridge_class = getattr(module, bridge_spec["module"].split(":")[1])
-        self.bridge = bridge_class(cfg_path=bridge_spec.get("cfg_path", None))
+        module = importlib.import_module(bridge_spec["module_path"].split(":")[0])
+        bridge_class = getattr(module, bridge_spec["module_path"].split(":")[1])
+        self.bridge = bridge_class(cfg_path=bridge_spec.get("config_path", None))
 
         # Monitor
         # TODO: default to defaultMonitor
         monitor_spec = {
             "name": "default",
-            "module": "sv.monitor.default:defaultMonitor",
-            "cfg_path": "configs/monitor/default.yaml",
+            "module_path": "sv.monitor.default:defaultMonitor",
+            "config_path": "configs/monitor/default.yaml",
         }
 
-        module = importlib.import_module(monitor_spec["module"].split(":")[0])
-        monitor_class = getattr(module, monitor_spec["module"].split(":")[1])
+        module = importlib.import_module(monitor_spec["module_path"].split(":")[0])
+        monitor_class = getattr(module, monitor_spec["module_path"].split(":")[1])
         self.monitor = monitor_class(
-            cfg_path=monitor_spec.get("cfg_path", None),
+            cfg_path=monitor_spec.get("config_path", None),
             plan_name=self._id,
         )
 
         if self.sps.param_range_file is not None:
             logger.info("Parameter range file provided: %s", self.sps.param_range_file)
             # param_sampler
-            module = importlib.import_module(sampler_spec["module"].split(":")[0])
-            sampler_class = getattr(module, sampler_spec["module"].split(":")[1])
+            module = importlib.import_module(sampler_spec["module_path"].split(":")[0])
+            sampler_class = getattr(module, sampler_spec["module_path"].split(":")[1])
             self.param_sampler = sampler_class(
                 param_range_file=self.sps.param_range_file,
                 past_results=None,
@@ -246,6 +236,7 @@ class Runner:
         except Exception as e:
             logger.error(f"Error during scenario execution: {e}")
             return
+        print()
         logger.info(
             f"Completed {sim_time_ns / 1e9:.2f} seconds scenario, using {sim_time_need:.2f} sec."
         )
