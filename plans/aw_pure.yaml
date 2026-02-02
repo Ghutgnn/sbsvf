@@ -1,47 +1,33 @@
-# plans/aw_pure.yaml
-name: autoware_pure
-mode: A # A: planning-only, B: full-stack (ROS2)
-runtime:
-  dt: 0.01
-  av:
-    connect_time_limit_s: 30
-    retry: 1
-  time_limit_s: 60
-  resources:
-    cpu: 8
-    gpu: none
-    mem_gb: 16
-  seed: 123456
-
-artifacts:
-  record:
-    - rosbag
-    - video
-    - state
-  out_dir: artifacts/mvp
-
-scenarios:
-  - scenarios/mvp_distribution/plan.yaml
+task:
+  worker_id: test_worker_01
+  output_dir: ./artifacts
+av:
+  module_path: sv.av.autoware_pure:AutowarePureAV
+  config_path: configs/av/autoware_pure.yaml
+map:
+  name: test_map
+  xodr_path: ./scenarios/mvp_distribution/maps/e6mini.xodr
+  osm_path: ./scenarios/mvp/maps/e6mini_same.osm
+scenario:
+  title: test_scenario
+  scenario_path: ./scenarios/mvp_distribution/scenarios/DEMO_CI_e6mini.xosc
+  param_path: ./scenarios/mvp_distribution/range.xosc
+  ego:
+    target_speed: 50
+    spawn:
+      type: LanePosition
+      value: [0, -2, 300, 0]
+      speed: 50
+    goal:
+      type: LanePosition
+      value: [0, -4, 700, 0]
 
 simulator:
-  name: esmini
-  module: sv.sim.esmini:EsminiAdapter
-  cfg_path: configs/sim/esmini_docker.yaml
-
-av:
-  name: autoware_pure
-  module: sv.av.autoware_pure:AutowarePureAV
-  cfg_path: configs/av/autoware_pure.yaml
-
-bridge:
-  name: none
-  module: sv.bridge.none:NoneBridge
-
-monitor:
-  name: default
-  module: sv.monitor.default:defaultMonitor
-  cfg_path: configs/monitor/default.yaml
+  module_path: sv.sim.esmini:EsminiAdapter
+  config_path: configs/sim/esmini_docker.yaml
 
 sampler:
-  name: grid_search
-  module: sv.sampler.grid_search_sampler:GridSearchSampler
+  module_path: sv.sampler.grid_search_sampler:GridSearchSampler
+
+runtime:
+  dt: 0.01
