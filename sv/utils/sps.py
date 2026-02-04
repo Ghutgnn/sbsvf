@@ -30,9 +30,11 @@ class EgoConfig:
 
     # ---- 解析 YAML 的工廠方法 ----
     @classmethod
-    def from_dict(cls, ego: Dict[str, Any], xodr_path: Path) -> "EgoConfig":
+    def from_dict(
+        cls, ego: Dict[str, Any], xodr_path: Path, rmlib_path: Path
+    ) -> "EgoConfig":
         position_factory = PositionFactory(
-            lib_path="/opt/esmini/bin/libesminiRMLib.so",
+            lib_path=rmlib_path.resolve(),
             xodr_path=xodr_path.resolve(),
         )
 
@@ -147,6 +149,7 @@ class ScenarioPack:
     scenarios: dict[str, Path]
     param_range_file: Path | None
     ego: EgoConfig
+    timeout_ns: int = field(default=3e11)  # default 300 seconds
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> "ScenarioPack":
@@ -163,6 +166,9 @@ class ScenarioPack:
             ego = EgoConfig.from_dict(
                 data["ego"],
                 xodr_path=Path("scenarios").resolve() / Path(data["maps"]["xodr"]),
+                rmlib_path=Path(
+                    data.get("rmlib_path", "/opt/esmini/bin/libesminiRMLib.so")
+                ).resolve(),
             )
 
             param_range_file = None
@@ -188,13 +194,13 @@ class ScenarioPack:
     ) -> "ScenarioPack":
         name = scenario_spec["title"]
         scenarios = {"xosc": Path(scenario_spec["scenario_path"]).resolve()}
-        maps = {
-            "xodr": Path(map_spec.get("xodr_path", None)).resolve(),
-            "osm": Path(map_spec.get("osm_path", None)).resolve(),
-        }
+        maps = map_spec.copy()
         ego = EgoConfig.from_dict(
             scenario_spec["ego"],
-            xodr_path=maps["xodr"],
+            xodr_path=Path(maps["xodr_path"]).resolve(),
+            rmlib_path=Path(
+                scenario_spec.get("rmlib_path", "/opt/esmini/bin/libesminiRMLib.so")
+            ).resolve(),
         )
         param_range_file = scenario_spec.get("param_path", None)
         if param_range_file is not None:

@@ -172,7 +172,7 @@ class AutowareAV:
     # ------------------------------------------------------------------
     # lifecycle
     # ------------------------------------------------------------------
-    def init(self, sps) -> None:
+    def init(self, runtime_spec: dict) -> None:
         """
         - 啟 ROS node + spin thread
         - 啟動 Autoware launch (subprocess)

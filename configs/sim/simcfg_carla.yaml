@@ -1,0 +1,23 @@
+# CARLA simulator configuration
+host: localhost
+port: 2000
+timeout: 10.0
+carla_root: /home/hcis-s05/ysws/carla/CARLA_0.9.16
+# carla_egg: /home/hcis-s05/ysws/carla/CARLA_0.9.16/PythonAPI/carla/dist/carla-0.9.16-cp312-cp312-manylinux_2_31_x86_64.whl
+synchronous_mode: true
+no_rendering_mode: false
+
+scenario_runner_tm_port: 8000
+scenario_runner_tm_seed: 0
+scenario_runner_path: /home/hcis-s05/ysws/carla/scenario_runner-0.9.16/scenario_runner.py
+
+ego_role_name: hero
+
+# Control tuning for VEL_STEER
+speed_kp: 0.5
+brake_kp: 0.5
+
+# Coordinate alignment
+yaw_sign: -1.0
+yaw_offset_deg: 0.0
+spawn_z_offset: 3.0
