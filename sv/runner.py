@@ -6,7 +6,6 @@ from pathlib import Path
 import importlib
 import yaml
 
-from sv.interface import Sim, AV, Bridge, Monitor  # Protocols
 from sv.utils.control import Ctrl
 from sv.utils.sps import ScenarioPack
 
@@ -104,14 +103,14 @@ class Runner:
         try:
             # --- init ---
             try:
-                self.sim.init(self.sps)
+                self.sim.init(self._runtime_spec)
                 sim_ok = True
             except Exception:
                 logger.exception("Simulator initialization failed")
                 return
 
             try:
-                self.av.init(self.sps)
+                self.av.init(self._runtime_spec)
                 av_ok = True
             except Exception:
                 logger.exception("AV initialization failed")

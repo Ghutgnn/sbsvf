@@ -129,7 +129,7 @@ class PositionFactory:
         self._setup_functions()
 
         # Disable RM log file output
-        # self._rm.RM_SetLogFilePath("".encode())
+        self._rm.RM_SetLogFilePath("".encode())
         self._rm.RM_SetOptionPersistent("disable_stdout".encode())
 
         ret = int(self._rm.RM_Init(str(xodr_path).encode()))

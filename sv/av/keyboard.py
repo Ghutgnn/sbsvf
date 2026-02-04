@@ -5,6 +5,7 @@ import ctypes as ct
 from pynput import keyboard
 
 from sv.registry import register_av
+from sv.utils.object import ObjectState
 from sv.utils.util import get_cfg
 from sv.utils.sps import ScenarioPack
 from sv.utils.control import Ctrl, CtrlMode
@@ -13,12 +14,12 @@ from sv.utils.control import Ctrl, CtrlMode
 logger = logging.getLogger(__name__)
 
 
-@register_av("keyboard")
 class KeyboardAV:
-    def __init__(self, cfg_path: Path, sps: Any):
-        self.cfg = get_cfg(Path(cfg_path))
+    def __init__(self, output_dir: Path, cfg_path: Path):
+        self.output_dir = output_dir
+        # self.cfg = get_cfg(Path(cfg_path))
 
-    def init(self):
+    def init(self, runtime_spec: dict) -> None:
         """Start keyboard listener in background thread."""
 
         def on_press(key):
@@ -55,7 +56,12 @@ class KeyboardAV:
         self.listener.start()
         self.running = True
 
-    def reset(self, sps: ScenarioPack, params: Optional[dict] = None) -> None:
+    def reset(
+        self,
+        output_dir: Path,
+        sps: ScenarioPack,
+        init_obs: Optional[list[ObjectState]] = None,
+    ) -> None:
         """Reset AV internal state (e.g. when simulator resets)."""
         self.pedal = 0
         self.wheel = 0
