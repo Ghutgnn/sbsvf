@@ -9,7 +9,7 @@ av:
 #   cfg_path: configs/av/autoware_pure.yaml
 
 simulator:
-  module_path: sv.sim.carla_clean:CarlaAdapter
+  module_path: sv.sim.carla:CarlaAdapter
   config_path: ./configs/sim/simcfg_carla.yaml
 
 map:
