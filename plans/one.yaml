@@ -2,7 +2,7 @@ task:
   worker_id: test_worker_01
   output_dir: ./artifacts
 av:
-  module: sv.av.autoware_pure:AutowarePureAV
+  module_path: sv.av.autoware_pure:AutowarePureAV
   cfg_path: configs/av/autoware_pure.yaml
 map:
   name: test_map
@@ -23,11 +23,11 @@ scenario:
       value: [0, -4, 700, 0]
 
 simulator:
-  module: sv.sim.esmini:EsminiAdapter
+  module_path: sv.sim.esmini:EsminiAdapter
   cfg_path: configs/sim/esmini_docker.yaml
 
 sampler:
-  module: sv.sampler.grid_search_sampler:GridSearchSampler
+  module_path: sv.sampler.grid_search_sampler:GridSearchSampler
 
 runtime:
   dt: 0.01
