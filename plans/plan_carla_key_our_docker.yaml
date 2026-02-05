@@ -1,30 +1,39 @@
 task:
   worker_id: test_worker_01
   output_dir: ./artifacts
+# av:
+#   module_path: sv.av.keyboard:KeyboardAV
+#   config_path: configs/av/keyboard.yaml
 av:
   module_path: sv.av.autoware_pure:AutowarePureAV
   config_path: configs/av/autoware_pure.yaml
+
+simulator:
+  module_path: sv.sim.carla:CarlaAdapter
+  config_path: ./configs/sim/simcfg_carla_docker.yaml
+
 map:
   name: test_map
+  # carla_map_name: Town01
+  # xodr_path: /home/hcis-s05/ysws/carla/CARLA_0.9.16/CarlaUE4/Content/Carla/Maps/OpenDrive/Town01.xodr
   xodr_path: ./scenarios/mvp_distribution/maps/e6mini.xodr
   osm_path: ./scenarios/mvp/maps/e6mini_same.osm
+
 scenario:
   title: test_scenario
+  # scenario_path: /opt/carla/scenario_runner-0.9.16/srunner/examples/PedestrianCrossingFront.xosc
   scenario_path: ./scenarios/carla_scenario/scenarios/DEMO_CI_e6mini.xosc
-  param_path: ./scenarios/mvp_distribution/range.xosc
+
+  # param_path: ./scenarios/mvp_distribution/range.xosc
   ego:
     target_speed: 50
     spawn:
       type: LanePosition
       value: [0, -2, 300, 0]
-      speed: 50
+      speed: 0
     goal:
       type: LanePosition
       value: [0, -4, 700, 0]
-
-simulator:
-  module_path: sv.sim.esmini:EsminiAdapter
-  config_path: configs/sim/esmini_docker.yaml
 
 sampler:
   module_path: sv.sampler.grid_search_sampler:GridSearchSampler

@@ -1,0 +1,43 @@
+task:
+  worker_id: test_worker_01
+  output_dir: ./artifacts
+# av:
+#   module_path: sv.av.keyboard:KeyboardAV
+#   config_path: configs/av/keyboard.yaml
+av:
+  module_path: sv.av.autoware_pure:AutowarePureAV
+  config_path: configs/av/autoware_pure.yaml
+
+simulator:
+  module_path: sv.sim.carla:CarlaAdapter
+  config_path: ./configs/sim/simcfg_carla_docker.yaml
+
+map:
+  name: test_map
+  carla_map_name: Town01
+  # xodr_path: /home/hcis-s05/ysws/carla/CARLA_0.9.16/CarlaUE4/Content/Carla/Maps/OpenDrive/Town01.xodr
+  xodr_path: /opt/carla/CARLA_0.9.16/CarlaUE4/Content/Carla/Maps/OpenDrive/Town01.xodr
+  osm_path: /autoware_map/carla_town1/lanelet2_map.osm
+
+scenario:
+  title: test_scenario
+  # scenario_path: /opt/carla/scenario_runner-0.9.16/srunner/examples/PedestrianCrossingFront.xosc
+  scenario_path: /opt/carla/scenario_runner-0.9.16/srunner/examples/CyclistCrossing.xosc
+
+  # param_path: ./scenarios/mvp_distribution/range.xosc
+  ego:
+    target_speed: 50
+    spawn:
+      type: WorldPosition
+      value: [140, -55, 0, 3.14159265359] # PedestrianCrossingFront
+      speed: 0
+    goal:
+      type: WorldPosition
+      # value: [88, -86, 0, -1.57079632679] # PedestrianCrossingFront
+      value: [60, 2.06, 0, 3.14159265359] # PedestrianCrossingFront
+
+sampler:
+  module_path: sv.sampler.grid_search_sampler:GridSearchSampler
+
+runtime:
+  dt: 0.01

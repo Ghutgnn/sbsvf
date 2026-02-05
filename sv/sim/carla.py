@@ -149,7 +149,7 @@ class CarlaAdapter:
             settings.fixed_delta_seconds = float(self._fixed_delta_seconds)
         self._world.apply_settings(settings)
 
-    def init(self, runtime_spec: dict) -> None:
+    def init(self, runtime_spec: dict, sps: ScenarioPack) -> None:
         self._fixed_delta_seconds = runtime_spec.get("dt", 0.01)
         self._connect()
 
@@ -448,6 +448,7 @@ class CarlaAdapter:
         CarlaDataProvider.on_carla_tick()
         self._sr_tree.tick_once()
         if self._sr_tree.status != py_trees.common.Status.RUNNING:
+            
             self._sr_running = False
             self._quit_flag = True
 
@@ -478,6 +479,7 @@ class CarlaAdapter:
 
     def _actor_type(self, actor) -> RoadObjectType:
         type_id = actor.type_id.lower()
+        print(type_id)
         if type_id.startswith("walker.pedestrian"):
             return RoadObjectType.PEDESTRIAN
         if type_id.startswith("vehicle."):
@@ -489,7 +491,7 @@ class CarlaAdapter:
                 return RoadObjectType.TRAILER
             if "motorcycle" in type_id or "motorbike" in type_id:
                 return RoadObjectType.MOTORCYCLE
-            if "bicycle" in type_id or "bike" in type_id:
+            if "bicycle" in type_id or "bike" in type_id or "diamondback" in type_id:
                 return RoadObjectType.BICYCLE
             if "van" in type_id:
                 return RoadObjectType.VAN
@@ -556,7 +558,7 @@ class CarlaAdapter:
             kin = ObjectKinematic(
                 time_ns=sim_time_ns,
                 x=float(transform.location.x),
-                y=float(transform.location.y),
+                y=float(transform.location.y) * self._yaw_sign,
                 z=float(transform.location.z),
                 yaw=float(yaw),
                 speed=float(speed),
@@ -627,7 +629,7 @@ class CarlaAdapter:
             target_speed = float(
                 payload.get("speed", self._get_forward_speed(self._ego_vehicle))
             )
-            steering_angle = float(payload.get("h", 0.0))
+            steering_angle = float(payload.get("h", 0.0)) * self._yaw_sign
 
             if self._max_steer_rad:
                 steer = _clamp(steering_angle / self._max_steer_rad, -1.0, 1.0)

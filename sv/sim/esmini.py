@@ -323,7 +323,7 @@ class EsminiAdapter:
         se.SE_SetDatFilePath.argtypes = [ct.c_char_p]
         se.SE_SetDatFilePath.restype = None
 
-    def init(self, runtime_spec: dict) -> None:
+    def init(self, runtime_spec: dict, sps: ScenarioPack) -> None:
         # self.sim_state = SimulatorState.AV_CONNECTING
         pass
 

@@ -125,7 +125,7 @@ setup:
   python3 aw_setup.py --apply
 
 
-hello:
+hello :
   ros2 launch autoware_launch \
     planning_simulator.launch.xml \
     map_path:=/autoware_map/sbsvf/ \
@@ -140,6 +140,40 @@ hello:
     launch_system_monitor:=false \
     launch_dummy_diag_publisher:=true \
     is_simulation:=true 
+
+hello_tw:
+  ros2 launch autoware_launch \
+    planning_simulator.launch.xml \
+    map_path:=/sbsvf/scenarios/mvp/maps \
+    lanelet2_map_file:=taoyuan_minsheng_testing.osm \
+    vehicle_model:=sample_vehicle \
+    sensor_model:=sample_sensor_kit \
+    launch_sensing:=false \
+    launch_localization:=false \
+    launch_perception:=false \
+    launch_vehicle_interface:=false \
+    system_run_mode:=planning_simulation \
+    launch_system_monitor:=false \
+    launch_dummy_diag_publisher:=true \
+    is_simulation:=true 
+
+
+hello_carla:
+  ros2 launch autoware_launch \
+    planning_simulator.launch.xml \
+    map_path:=/autoware_map/carla_town1/ \
+    lanelet2_map_file:=lanelet2_map.osm \
+    vehicle_model:=sample_vehicle \
+    sensor_model:=sample_sensor_kit \
+    launch_sensing:=false \
+    launch_localization:=false \
+    launch_perception:=false \
+    launch_vehicle_interface:=false \
+    system_run_mode:=planning_simulation \
+    launch_system_monitor:=false \
+    launch_dummy_diag_publisher:=true \
+    is_simulation:=true 
+
 
 # hello:
 #   ros2 launch autoware_launch \

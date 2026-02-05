@@ -19,7 +19,7 @@ class KeyboardAV:
         self.output_dir = output_dir
         # self.cfg = get_cfg(Path(cfg_path))
 
-    def init(self, runtime_spec: dict) -> None:
+    def init(self, runtime_spec: dict, sps: ScenarioPack) -> None:
         """Start keyboard listener in background thread."""
 
         def on_press(key):

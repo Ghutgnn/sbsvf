@@ -155,7 +155,7 @@ class AutowarePureAV:
     # ------------------------------------------------------------------
     # lifecycle
     # ------------------------------------------------------------------
-    def init(self, sps: ScenarioPack) -> None:
+    def init(self, runtime_spec: dict, sps: ScenarioPack) -> None:
         """
         - ROS node + spin thread
         - Launch Autoware (subprocess)
@@ -319,7 +319,7 @@ class AutowarePureAV:
             },
         )
 
-    def step(self, obs: Dict[str, Any], time_stamp_ns: int) -> Ctrl:
+    def step(self, obs: list[ObjectState], time_stamp_ns: int) -> Ctrl:
         """
         - 發 ego state + optional agents 給 Autoware
         - 等待一筆「新的」 control_cmd（最多 control_timeout_sec）
@@ -725,7 +725,7 @@ class AutowarePureAV:
 
         full_cmd = " && ".join(launch_parts)
         logger.info(f"Launching Autoware: {full_cmd}")
-        log = open(self._autoware_log_path, "ab", buffering=0)
+        log = open(self._autoware_log_path, "wb", buffering=0)
         self._autoware_proc = subprocess.Popen(
             ["bash", "-lc", full_cmd],
             stdout=log,
@@ -1060,6 +1060,7 @@ class AutowarePureAV:
             sigma_w = 0.01  # rad/s
 
             kin.has_twist_covariance = True
+            kin.has_twist_covariance = False
             kin.twist_with_covariance.covariance[0] = sigma_v**2
             kin.twist_with_covariance.covariance[7] = sigma_v**2
             kin.twist_with_covariance.covariance[14] = sigma_v**2
@@ -1069,7 +1070,6 @@ class AutowarePureAV:
 
             obj.kinematics = kin
             msg.objects.append(obj)
-
         self._objects_pub.publish(msg)
 
     def _publish_dummy_pointcloud(self, t: rclpy.time.Time) -> None:
@@ -1217,7 +1217,7 @@ class AutowarePureAV:
         self._sps = sps
 
         # Map path
-        map_full_path = Path(sps.maps.get("osm"))
+        map_full_path = Path(sps.maps.get("osm_path")).resolve()
         if not map_full_path.exists():
             raise FileNotFoundError(f"Autoware map file not found: {map_full_path}")
 

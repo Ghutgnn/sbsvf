@@ -99,14 +99,14 @@ class Runner:
         try:
             # --- init ---
             try:
-                self.sim.init(self._runtime_spec)
+                self.sim.init(self._runtime_spec, self.sps)
                 sim_ok = True
             except Exception:
                 logger.exception("Simulator initialization failed")
                 return
 
             try:
-                self.av.init(self._runtime_spec)
+                self.av.init(self._runtime_spec, self.sps)
                 av_ok = True
             except Exception:
                 logger.exception("AV initialization failed")

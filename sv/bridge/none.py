@@ -10,6 +10,8 @@ class NoneBridge:
         pass
 
     def sim_to_av(self, raw: dict[str, Any]) -> dict[str, Any]:  # RawObs -> Obs
+        # pprint.pprint(raw)
+        # input()
         return raw
 
     def av_to_sim(self, ctrl: Ctrl) -> Ctrl:  # Ctrl -> SimCtrl

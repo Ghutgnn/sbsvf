@@ -26,6 +26,7 @@ services:
       - ${XAUTHORITY}:${XAUTHORITY}
       - .:/sbsvf
       - /home/hcis-s05/ysws/autoware_map:/autoware_map
+      - /home/hcis-s05/ysws/carla:/opt/carla
 
     tty: true
     stdin_open: true
