@@ -10,8 +10,9 @@ map:
   osm_path: ./scenarios/mvp/maps/e6mini_same.osm
 scenario:
   title: test_scenario
-  scenario_path: ./scenarios/carla_scenario/scenarios/DEMO_CI_e6mini.xosc
-  param_path: ./scenarios/mvp_distribution/range.xosc
+  # scenario_path: ./scenarios/carla_scenario/scenarios/DEMO_CI_e6mini.xosc
+  scenario_path: ./scenarios/mvp/scenarios/DEMO_CI_e6mini.xosc
+  # param_path: ./scenarios/mvp_distribution/range.xosc
   ego:
     target_speed: 50
     spawn:
@@ -24,7 +25,7 @@ scenario:
 
 simulator:
   module_path: sv.sim.esmini:EsminiAdapter
-  config_path: configs/sim/esmini_docker.yaml
+  config_path: configs/sim/simcfg_esmini_docker.yaml
 
 sampler:
   module_path: sv.sampler.grid_search_sampler:GridSearchSampler
