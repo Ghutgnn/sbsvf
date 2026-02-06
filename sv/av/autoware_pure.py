@@ -308,16 +308,8 @@ class AutowarePureAV:
             raise RuntimeError("Autoware planning timed out.")
 
         logger.info("Autoware reset ready. Ready to engage.")
-        speed = float(self._latest_control.longitudinal.velocity)
-        steering = float(self._latest_control.lateral.steering_tire_angle)
 
-        return Ctrl(
-            mode=CtrlMode.VEL_STEER,
-            payload={
-                "speed": speed,
-                "h": steering,
-            },
-        )
+        return self._prepare_control_payload()
 
     def step(self, obs: list[ObjectState], time_stamp_ns: int) -> Ctrl:
         """
@@ -414,16 +406,8 @@ class AutowarePureAV:
         self._latest_control_stamp = (
             self._latest_control.stamp.sec * 1e9 + self._latest_control.stamp.nanosec
         )
-        speed = float(self._latest_control.longitudinal.velocity)
-        steering = float(self._latest_control.lateral.steering_tire_angle)
 
-        return Ctrl(
-            mode=CtrlMode.VEL_STEER,
-            payload={
-                "speed": speed,
-                "h": steering,
-            },
-        )
+        return self._prepare_control_payload()
 
     def stop(self) -> None:
         """關閉 Autoware process + ROS node / executor"""
@@ -1201,6 +1185,39 @@ class AutowarePureAV:
     # ------------------------------------------------------------------
     # helpers
     # ------------------------------------------------------------------
+    def _prepare_control_payload(self):
+        if self._latest_control is None:
+            return Ctrl(mode=CtrlMode.None_)
+
+        steer = float(self._latest_control.lateral.steering_tire_angle)
+        if bool(self._latest_control.lateral.is_defined_steering_tire_rotation_rate):
+            steer_speed = float(
+                self._latest_control.lateral.steering_tire_rotation_rate
+            )
+        else:
+            steer_speed = 0.0
+
+        speed = float(self._latest_control.longitudinal.velocity)
+
+        acceleration = None
+        if bool(self._latest_control.longitudinal.is_defined_acceleration):
+            acceleration = float(self._latest_control.longitudinal.acceleration)
+
+        jerk = None
+        if bool(self._latest_control.longitudinal.is_defined_jerk):
+            jerk = float(self._latest_control.longitudinal.jerk)
+
+        payload = {
+            "steer": steer,
+            "steer_speed": steer_speed,
+            "speed": speed,
+        }
+        if acceleration is not None:
+            payload["acceleration"] = acceleration
+        if jerk is not None:
+            payload["jerk"] = jerk
+
+        return Ctrl(mode=CtrlMode.ACKERMANN, payload=payload)
 
     def _update_kinematic(self, kinematic: ObjectKinematic) -> None:
         self._prev_prev_kinematic = self._prev_kinematic

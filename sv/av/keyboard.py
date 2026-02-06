@@ -75,11 +75,6 @@ class KeyboardAV:
         Returns ctrl dict:
             {"pedal": -1|0|1, "wheel": -1|0|1}
         """
-        # 未來如果是 ML / rule-based AV，可以在這裡用 obs、dt 做決策
-        # return {
-        #     "mode": "VEL_STEER",
-        #     "payload": {"pedal": self.pedal, "wheel": self.wheel},
-        # }
         return Ctrl(
             mode=CtrlMode.THROTTLE_STEER,
             payload={"pedal": self.pedal, "wheel": self.wheel},

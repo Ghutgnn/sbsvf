@@ -7,9 +7,9 @@ class CtrlMode(str, Enum):
     None_ = "NONE"
     TRAJ = "TRAJ"
     THROTTLE_STEER = "THROTTLE_STEER"
-    VEL_STEER = "VEL_STEER"
     WAYPOINTS = "WAYPOINTS"
     POSITION = "POSITION"
+    ACKERMANN = "ACKERMANN"
 
 
 @dataclass

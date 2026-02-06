@@ -91,9 +91,9 @@ class Vehicle:
             # Update vehicle state
             self._se.SE_SimpleVehicleGetState(self.sv_handle, ct.byref(self.vh_state))
 
-        elif ctrl.mode == CtrlMode.VEL_STEER:
+        elif ctrl.mode == CtrlMode.ACKERMANN:
             target_speed = ctrl.payload.get("speed", self.vh_state.speed)
-            heading_to_target = ctrl.payload.get("h", self.vh_state.h)
+            heading_to_target = ctrl.payload.get("steer", self.vh_state.h)
             self._se.SE_SimpleVehicleControlTarget(
                 self.sv_handle, dt_s, target_speed, heading_to_target
             )

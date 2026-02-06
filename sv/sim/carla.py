@@ -313,7 +313,6 @@ class CarlaAdapter:
         if self._sync:
             self._world.tick()
         objects = self._collect_objects()
-
         return objects
 
     def _start_scenario_runner(self, sps: ScenarioPack, params: Optional[dict]) -> None:
@@ -624,31 +623,6 @@ class CarlaAdapter:
             self._ego_vehicle.apply_control(control)
             return
 
-        if ctrl.mode == CtrlMode.VEL_STEER:
-            payload = ctrl.payload or {}
-            target_speed = float(
-                payload.get("speed", self._get_forward_speed(self._ego_vehicle))
-            )
-            steering_angle = float(payload.get("h", 0.0)) * self._yaw_sign
-
-            if self._max_steer_rad:
-                steer = _clamp(steering_angle / self._max_steer_rad, -1.0, 1.0)
-            else:
-                steer = _clamp(steering_angle, -1.0, 1.0)
-
-            cur_speed = self._get_forward_speed(self._ego_vehicle)
-            kp = float(self.cfg.get("speed_kp", 0.5))
-            kb = float(self.cfg.get("brake_kp", kp))
-            speed_err = target_speed - cur_speed
-            throttle = _clamp(speed_err * kp, 0.0, 1.0)
-            brake = _clamp(-speed_err * kb, 0.0, 1.0)
-
-            control = self._carla.VehicleControl(
-                throttle=throttle, steer=steer, brake=brake
-            )
-            self._ego_vehicle.apply_control(control)
-            return
-
         if ctrl.mode == CtrlMode.POSITION:
             payload = ctrl.payload or {}
             transform = self._ego_vehicle.get_transform()
@@ -665,6 +639,57 @@ class CarlaAdapter:
                 roll=transform.rotation.roll,
             )
             self._ego_vehicle.set_transform(self._carla.Transform(loc, rot))
+            return
+
+        if ctrl.mode == CtrlMode.ACKERMANN:
+            payload = ctrl.payload or {}
+            steer = float(payload.get("steer", 0.0)) * self._yaw_sign
+            steer_speed = abs(float(payload.get("steer_speed", 0.0)))
+            speed = float(
+                payload.get("speed", self._get_forward_speed(self._ego_vehicle))
+            )
+            acceleration = payload.get("acceleration", None)
+            if acceleration is None:
+                acceleration = float(self.cfg.get("ackermann_accel_default", 1.5))
+            else:
+                acceleration = float(acceleration)
+            jerk = payload.get("jerk", None)
+            if jerk is None:
+                jerk = float(self.cfg.get("ackermann_jerk_default", 0.0))
+            else:
+                jerk = float(jerk)
+
+            ### ISSUE: CARLA's Ackermann controller jitters when target speed is low and fixed time step is also low.
+
+            # control = self._carla.VehicleAckermannControl(
+            #     steer=steer,
+            #     steer_speed=steer_speed,
+            #     speed=speed,
+            #     acceleration=acceleration,
+            #     jerk=jerk,
+            # )
+            # self._ego_vehicle.apply_ackermann_control(control)
+
+            ###
+
+            # So, here just implement a simple PID control for speed and steer, and ignore steer_speed, accel, jerk for now.
+            if self._max_steer_rad:
+                steer = _clamp(steer / self._max_steer_rad, -1.0, 1.0)
+            else:
+                steer = _clamp(steer, -1.0, 1.0)
+
+            cur_speed = self._get_forward_speed(self._ego_vehicle)
+            kp = float(self.cfg.get("speed_kp", 0.5))
+            kb = float(self.cfg.get("brake_kp", kp))
+            speed_err = speed - cur_speed
+            throttle = _clamp(speed_err * kp, 0.0, 1.0)
+            brake = _clamp(-speed_err * kb, 0.0, 1.0)
+
+            control = self._carla.VehicleControl(
+                throttle=throttle, steer=steer, brake=brake
+            )
+            self._ego_vehicle.apply_control(control)
+
             return
 
         logger.warning("Unsupported control mode: %s", ctrl.mode)
