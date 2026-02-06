@@ -143,6 +143,7 @@ class EsminiAdapter:
         self._setup_function_signatures()
 
     def _setup_esmini_opts(self):
+        self.se.SE_SetSeed(1234)
 
         use_viewer = self.cfg.get("use_viewer", True)
         threads = self.cfg.get("threads", 0)
@@ -282,6 +283,10 @@ class EsminiAdapter:
         # SE_DLL_API const char *SE_GetVariableName(int index, int *type);
         self.se.SE_GetVariableName.argtypes = [ct.c_int, ct.c_char_p]
         self.se.SE_GetVariableName.restype = ct.c_char_p
+
+        # SE_DLL_API void SE_SetSeed(unsigned int seed);
+        self.se.SE_SetSeed.argtypes = [ct.c_uint]
+        self.se.SE_SetSeed.restype = None
 
         # SE_DLL_API int SE_SetParameterBool(const char *parameterName, bool value);
         self.se.SE_SetParameterBool.argtypes = [ct.c_char_p, ct.c_bool]
