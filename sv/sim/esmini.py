@@ -104,10 +104,12 @@ class Vehicle:
             x = ctrl.payload.get("x", self.vh_state.x)
             y = ctrl.payload.get("y", self.vh_state.y)
             h = ctrl.payload.get("h", self.vh_state.h)
+            speed = ctrl.payload.get("speed", self.vh_state.speed)
             # Directly set position
             self.vh_state.x = x
             self.vh_state.y = y
             self.vh_state.h = h
+            self.vh_state.speed = speed
 
         else:
             logger.warning(f"Unsupported control mode: {ctrl.mode}")
@@ -139,7 +141,6 @@ class EsminiAdapter:
         self._params_ptr = None
         self.ego_car = None
         self.objects: list[ObjectState] = []
-        # self._setup_esmini_opts()
         self._setup_function_signatures()
 
     def _setup_esmini_opts(self):
@@ -280,6 +281,10 @@ class EsminiAdapter:
         ]
         self.se.SE_RegisterParameterDeclarationCallback.restype = None
 
+        # SE_DLL_API void SE_ClearPaths();
+        self.se.SE_ClearPaths.argtypes = []
+        self.se.SE_ClearPaths.restype = None
+
         # SE_DLL_API const char *SE_GetVariableName(int index, int *type);
         self.se.SE_GetVariableName.argtypes = [ct.c_int, ct.c_char_p]
         self.se.SE_GetVariableName.restype = ct.c_char_p
@@ -329,10 +334,6 @@ class EsminiAdapter:
         se.SE_SetDatFilePath.restype = None
 
     def init(self, runtime_spec: dict, sps: ScenarioPack) -> None:
-        # self.sim_state = SimulatorState.AV_CONNECTING
-        pass
-
-    def start(self, cfg: dict):
         pass
 
     def step(self, ctrl: Ctrl, time_stamp_ns: int):
@@ -523,8 +524,16 @@ class EsminiAdapter:
             self._params_ptr,
         )
         use_viewer, threads, record = self._setup_esmini_opts()
+
+        map_path = Path(sps.maps["xodr_path"])
+        self.se.SE_AddPath(str(map_path.parent).encode())
+        disable_controller = 1  # 0 to enable built-in controllers, 1 to disable
         ret = self.se.SE_Init(
-            str(sps.scenarios["xosc"]).encode(), 1, use_viewer, threads, record
+            str(sps.scenarios["xosc"]).encode(),
+            disable_controller,
+            use_viewer,
+            threads,
+            record,
         )
         if ret != 0:
             raise RuntimeError(f"esmini SE_Init failed with code {ret}")

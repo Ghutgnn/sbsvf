@@ -190,7 +190,7 @@ class AutowarePureAV:
         output_dir: Path,
         sps: ScenarioPack,
         init_obs: Optional[list[ObjectState]] = None,
-    ) -> None:
+    ):
         """
         Reset AV internal state when simulator resets.
 
