@@ -5,10 +5,11 @@ task:
 #   module_path: sv.av.keyboard:KeyboardAV
 #   config_path: configs/av/keyboard.yaml
 av:
-  module_path: sv.av.autoware_pure:AutowarePureAV
+  module_path: sv.av.autoware_pure_pb:AutowarePureAV
   config_path: configs/av/autoware_pure.yaml
 
 simulator:
+  # url: :50051
   module_path: sv.sim.carla:CarlaAdapter
   config_path: ./configs/sim/simcfg_carla.yaml
 
@@ -21,8 +22,8 @@ map:
 
 scenario:
   title: test_scenario
-  # scenario_path: /scenario_runner/srunner/examples/PedestrianCrossingFront.xosc
-  scenario_path: /opt/carla/scenario_runner-0.9.16/srunner/examples/PedestrianCrossingFront.xosc
+  scenario_path: /scenario_runner/srunner/examples/PedestrianCrossingFront.xosc
+  # scenario_path: /opt/carla/scenario_runner-0.9.16/srunner/examples/PedestrianCrossingFront.xosc
 
   # param_path: ./scenarios/mvp_distribution/range.xosc
   ego:

@@ -1,0 +1,36 @@
+task:
+  worker_id: test_worker_carla_agent
+  output_dir: ./artifacts
+
+av:
+  module_path: sv.av.carla_agent:CarlaAgentAV
+  config_path: configs/av/carla_agent.yaml
+
+simulator:
+  module_path: sv.sim.carla:CarlaAdapter
+  config_path: ./configs/sim/simcfg_carla.yaml
+
+map:
+  name: test_map
+  carla_map_name: Town01
+  xodr_path: /home/hcis-s05/ysws/carla/CARLA_0.9.16/CarlaUE4/Content/Carla/Maps/OpenDrive/Town01.xodr
+  osm_path: ./scenarios/mvp/maps/e6mini_same.osm
+
+scenario:
+  title: test_scenario
+  scenario_path: /home/hcis-s05/ysws/carla/scenario_runner-0.9.16/srunner/examples/PedestrianCrossingFront.xosc
+  ego:
+    target_speed: 50
+    spawn:
+      type: WorldPosition
+      value: [-9.4, 152.8, 0.5, 1.57079632679]
+      speed: 0
+    goal:
+      type: WorldPosition
+      value: [-9.4, -152.8, 0.5, 1.57079632679]
+
+sampler:
+  module_path: sv.sampler.grid_search_sampler:GridSearchSampler
+
+runtime:
+  dt: 0.01

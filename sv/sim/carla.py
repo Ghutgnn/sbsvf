@@ -46,7 +46,7 @@ class CarlaAdapter:
         self._fixed_delta_seconds = None
 
         self._sync = bool(self.cfg.get("synchronous_mode", True))
-        self._no_rendering = bool(self.cfg.get("no_rendering_mode", False))
+        self._no_rendering = bool(self.cfg.get("no_rendering_mode", True))
         self._yaw_sign = float(self.cfg.get("yaw_sign", 1.0))
         self._yaw_offset_deg = float(self.cfg.get("yaw_offset_deg", 0.0))
         self._spawn_z_offset = float(self.cfg.get("spawn_z_offset", 3.0))
@@ -561,9 +561,9 @@ class CarlaAdapter:
                 z=float(transform.location.z),
                 yaw=float(yaw),
                 speed=float(speed),
-                accel=float(accel),
+                acceleration=float(accel),
                 yaw_rate=float(yaw_rate),
-                yaw_acc=float(yaw_acc),
+                yaw_acceleration=float(yaw_acc),
             )
 
             obj = self._objects_by_id.get(actor.id)

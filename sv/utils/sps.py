@@ -5,6 +5,16 @@ from pathlib import Path
 from typing import List, Literal, Tuple, Any, Dict
 import yaml
 
+from carla_api import path_pb2
+from carla_api import config_pb2, control_pb2
+from carla_api import position_pb2, scenario_pb2
+
+# from carla_api import carla_pb2, carla_pb2_grpc
+# from google.protobuf import any_pb2
+# import grpc
+# from google.protobuf import any_pb2
+
+
 from sv.utils.util import get_cfg
 from sv.utils.position import PositionFactory, Position
 
@@ -14,11 +24,23 @@ class SpawnConfig:
     position: Position
     speed: float
 
+    def to_protobuf(self) -> scenario_pb2.SpawnConfig:
+        return scenario_pb2.SpawnConfig(
+            position=self.position.to_protobuf(),
+            speed=self.speed,
+        )
+
 
 @dataclass
 class GoalConfig:
     position: Position
     # speed: float
+
+    def to_protobuf(self) -> scenario_pb2.GoalConfig:
+        return scenario_pb2.GoalConfig(
+            position=self.position.to_protobuf(),
+            # speed=self.speed,
+        )
 
 
 @dataclass
@@ -141,6 +163,14 @@ class EgoConfig:
 
         return lane_points  # 先回傳整理好的資料結構給你看
 
+    def to_protobuf(self) -> scenario_pb2.EgoConfig:
+        return scenario_pb2.EgoConfig(
+            target_speed=self.target_speed,
+            spawn_config=self.spawn.to_protobuf(),
+            # check_points=[cp.to_protobuf() for cp in self.check_points],
+            goal_config=self.goal.to_protobuf(),
+        )
+
 
 @dataclass
 class ScenarioPack:
@@ -149,7 +179,7 @@ class ScenarioPack:
     scenarios: dict[str, Path]
     param_range_file: Path | None
     ego: EgoConfig
-    timeout_ns: int = field(default=3e11)  # default 300 seconds
+    timeout_ns: int = field(default=int(3e11))  # default 300 seconds
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> "ScenarioPack":
@@ -219,3 +249,19 @@ class ScenarioPack:
         with open(path, "r", encoding="utf-8") as f:
             data = yaml.safe_load(f)
         return cls.from_dict(data)
+
+    def to_protobuf(self):
+        return scenario_pb2.ScenarioPack(
+            name=self.name,
+            maps={fmt: path_pb2.Path(path=str(p)) for fmt, p in self.maps.items()},
+            scenarios={
+                fmt: path_pb2.Path(path=str(p)) for fmt, p in self.scenarios.items()
+            },
+            param_range_file=(
+                path_pb2.Path(path=str(self.param_range_file))
+                if self.param_range_file
+                else None
+            ),
+            ego=self.ego.to_protobuf(),
+            timeout_ns=self.timeout_ns,
+        )

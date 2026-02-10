@@ -199,9 +199,7 @@ class AutowarePureAV:
         2. 用 AD API 設 initial pose / route
         """
 
-        # for obj in init_obs:
-
-        # init_obs = [ObjectState.from_pb(obj) for obj in init_obs]
+        init_obs = [ObjectState.from_pb(obj) for obj in init_obs]
         self._output_dir = output_dir
         self._ensure_ros_node()
 
@@ -328,7 +326,7 @@ class AutowarePureAV:
         }
         """
         self._ensure_ros_node()
-        # obs = [ObjectState.from_pb(obj) for obj in obs]
+        obs = [ObjectState.from_pb(obj) for obj in obs]
         self._sim_time_ns = time_stamp_ns
         self._current_ros_time_ns = self._base_time_ns + self._sim_time_ns
 

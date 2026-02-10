@@ -1,0 +1,31 @@
+# CARLA agent AV configuration
+host: localhost
+port: 2000
+timeout: 10.0
+
+# CARLA PythonAPI discovery
+carla_root: /home/hcis-s05/ysws/carla/CARLA_0.9.16
+# carla_egg: /home/hcis-s05/ysws/carla/CARLA_0.9.16/PythonAPI/carla/dist/carla-0.9.16-cp312-cp312-manylinux_2_31_x86_64.whl
+
+ego_role_name: hero
+
+# agent_type: behavior | basic | constant_velocity
+agent_type: constant_velocity
+behavior: normal
+
+# If null, fallback to sps.ego.target_speed
+# target_speed: 50
+target_speed_is_mps: false
+follow_speed_limits: false
+ignore_traffic_lights: false
+ignore_stop_signs: false
+ignore_vehicles: false
+
+random_destination: false
+
+# Coordinate alignment (match simcfg_carla*.yaml)
+yaw_sign: -1.0
+yaw_offset_deg: 0.0
+
+# Wait for ego spawn
+max_wait_sec: 10.0

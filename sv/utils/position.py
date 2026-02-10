@@ -6,6 +6,8 @@ from pathlib import Path
 from typing import Optional
 import logging
 
+from carla_api import position_pb2
+
 
 logger = logging.getLogger("esmini.rm")
 
@@ -37,6 +39,15 @@ class LanePosition:
     offset: float
     junction_id: int = -1  # -1 if not in a junction
 
+    def to_protobuf(self) -> position_pb2.LanePosition:
+        return position_pb2.LanePosition(
+            road_id=self.road_id,
+            junction_id=self.junction_id,
+            lane_id=self.lane_id,
+            offset=self.offset,
+            s=self.s,
+        )
+
 
 @dataclass(frozen=True, slots=True)
 class WorldPosition:
@@ -47,6 +58,17 @@ class WorldPosition:
     p: float
     r: float
     h_relative: float
+
+    def to_protobuf(self) -> position_pb2.WorldPosition:
+        return position_pb2.WorldPosition(
+            x=self.x,
+            y=self.y,
+            z=self.z,
+            h=self.h,
+            p=self.p,
+            r=self.r,
+            h_relative=self.h_relative,
+        )
 
 
 @dataclass(frozen=True, slots=True)
@@ -114,6 +136,12 @@ class Position:
             "p": self.p,
             "r": self.r,
         }
+
+    def to_protobuf(self) -> position_pb2.Position:
+        return position_pb2.Position(
+            lane=self.lane.to_protobuf(),
+            world=self.world.to_protobuf(),
+        )
 
 
 # ---------- factory ----------
