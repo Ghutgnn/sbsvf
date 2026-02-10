@@ -29,7 +29,7 @@ class Runner:
         logging.info("Initializing Runner...")
 
         self._runtime_spec = runtime_spec
-        self._id = task_spec.get("job_id", "default_worker")
+        self._id = task_spec.get("worker_id", "default_worker")
 
         self._dt_s = runtime_spec.get("dt", None)
         if self._dt_s is None:
@@ -49,9 +49,11 @@ class Runner:
         # self.sim = sim_class(
         #     output_dir=self.output_dir, cfg_path=sim_spec.get("config_path", None)
         # )
+        # self.sim.init(self._runtime_spec, self.sps)
+
         try:
-            self.sim = SimWrapper()
-            self.sim.init(sim_spec=sim_spec, dt=self._dt_s)
+            self.sim = SimWrapper(sim_spec=sim_spec, dt_ns=int(self._dt_s * 1e9))
+            # self.sim.init(sim_spec=sim_spec, dt=self._dt_s)
         except Exception:
             logger.exception("Simulator initialization failed")
             return
@@ -204,6 +206,7 @@ class Runner:
 
         sim_time_ns = 0  # Simulation time in nanoseconds
         # ctrl_for_sim: Ctrl = Ctrl()
+        logger.info("Starting execution loop. using dt_s=%.3f", dt_s)
         try:
             real_start_time_s = time()
             while True:

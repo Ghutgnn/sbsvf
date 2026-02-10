@@ -12,6 +12,7 @@ class CtrlMode(str, Enum):
     WAYPOINTS = "WAYPOINTS"
     POSITION = "POSITION"
     ACKERMANN = "ACKERMANN"
+    THROTTLE_STEER_BREAK = "THROTTLE_STEER_BREAK"
 
 
 @dataclass

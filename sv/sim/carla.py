@@ -313,6 +313,7 @@ class CarlaAdapter:
         if self._sync:
             self._world.tick()
         objects = self._collect_objects()
+        logger.info("Simulator Reset complete, initial objects count: %d", len(objects))
         return objects
 
     def _start_scenario_runner(self, sps: ScenarioPack, params: Optional[dict]) -> None:
@@ -447,7 +448,7 @@ class CarlaAdapter:
         CarlaDataProvider.on_carla_tick()
         self._sr_tree.tick_once()
         if self._sr_tree.status != py_trees.common.Status.RUNNING:
-            
+
             self._sr_running = False
             self._quit_flag = True
 
@@ -627,7 +628,7 @@ class CarlaAdapter:
             payload = ctrl.payload or {}
             transform = self._ego_vehicle.get_transform()
             x = float(payload.get("x", transform.location.x))
-            y = float(payload.get("y", transform.location.y))
+            y = float(payload.get("y", transform.location.y)) * self._yaw_sign
             z = float(payload.get("z", transform.location.z))
             h = float(payload.get("h", self._from_carla_yaw(transform.rotation.yaw)))
             yaw_deg = self._to_carla_yaw(h)

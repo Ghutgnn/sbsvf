@@ -244,6 +244,8 @@ class EsminiEmbedAV:
 
         use_viewer, threads, record = self._setup_esmini_opts()
         disable_controller = 0  # 0 to enable built-in controllers, 1 to disable
+        map_path = Path(sps.maps["xodr_path"])
+        self.se.SE_AddPath(str(map_path.parent).encode())
         ret = self.se.SE_Init(
             str(sps.maps["dummy"]).encode(),
             disable_controller,
@@ -273,6 +275,13 @@ class EsminiEmbedAV:
         #         obj_kinematic.speed,
         #     )
         # )
+        logger.info(
+            "AV reset complete, ego initialized at x=%.2f, y=%.2f, h=%.2f, speed=%.2f",
+            ego_kinematic.x,
+            ego_kinematic.y,
+            ego_kinematic.yaw,
+            ego_kinematic.speed,
+        )
         return Ctrl(
             mode=CtrlMode.POSITION,
             payload={

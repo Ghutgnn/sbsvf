@@ -1,15 +1,11 @@
 task:
-  worker_id: test_worker_01
+  worker_id: test_worker_02
   output_dir: ./artifacts
-# av:
-#   module_path: sv.av.keyboard:KeyboardAV
-#   config_path: configs/av/keyboard.yaml
 av:
-  module_path: sv.av.autoware_pure_pb:AutowarePureAV
-  config_path: configs/av/autoware_pure.yaml
+  module_path: sv.av.esmini_embed_AV:EsminiEmbedAV
+  config_path: configs/av/avcfg_esmini_embed_docker.yaml
 
 simulator:
-  url: llt.hcislab.org:50051
   module_path: sv.sim.carla:CarlaAdapter
   config_path: ./configs/sim/simcfg_carla.yaml
 
@@ -19,11 +15,12 @@ map:
   xodr_path: /opt/carla/CARLA_0.9.16/CarlaUE4/Content/Carla/Maps/OpenDrive/Town01.xodr
   # xodr_path: /workspace/CarlaUE4/Content/Carla/Maps/OpenDrive/Town01.xodr
   osm_path: /autoware_map/carla_town1/lanelet2_map.osm
+  dummy: /sbsvf/scenarios/example/xodr/carlaosc_ped_cross.xosc
 
 scenario:
   title: test_scenario
-  scenario_path: /scenario_runner/srunner/examples/PedestrianCrossingFront.xosc
-  # scenario_path: /opt/carla/scenario_runner-0.9.16/srunner/examples/PedestrianCrossingFront.xosc
+  # scenario_path: /scenario_runner/srunner/examples/PedestrianCrossingFront.xosc
+  scenario_path: /opt/carla/scenario_runner-0.9.16/srunner/examples/PedestrianCrossingFront.xosc
 
   # param_path: ./scenarios/mvp_distribution/range.xosc
   ego:

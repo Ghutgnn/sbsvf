@@ -91,6 +91,22 @@ class Vehicle:
             # Update vehicle state
             self._se.SE_SimpleVehicleGetState(self.sv_handle, ct.byref(self.vh_state))
 
+        elif ctrl.mode == CtrlMode.THROTTLE_STEER_BREAK:
+            print(f"Applying control: {ctrl}")
+            throttle = float(ctrl.payload.get("throttle", 0.0))
+            steer = float(ctrl.payload.get("steer", 0.0))
+            brake = float(ctrl.payload.get("brake", 0.0))
+
+            final_throttle = (
+                throttle - brake
+            )  # Simple way to combine throttle and brake
+
+            self._se.SE_SimpleVehicleControlAnalog(
+                self.sv_handle, dt_s, final_throttle, steer
+            )
+            # Update vehicle state
+            self._se.SE_SimpleVehicleGetState(self.sv_handle, ct.byref(self.vh_state))
+
         elif ctrl.mode == CtrlMode.ACKERMANN:
             target_speed = ctrl.payload.get("speed", self.vh_state.speed)
             heading_to_target = ctrl.payload.get("steer", self.vh_state.h)
@@ -408,9 +424,9 @@ class EsminiAdapter:
                 z=float(obj_state.z),
                 yaw=float(obj_state.h),
                 speed=float(obj_state.speed),
-                accel=float(obj_accel),
+                acceleration=float(obj_accel),
                 yaw_rate=float(h_rate.value) if ret_rate == 0 else 0.0,
-                yaw_acc=float(h_acc.value) if ret_acc == 0 else 0.0,
+                yaw_acceleration=float(h_acc.value) if ret_acc == 0 else 0.0,
             )
             self.objects[i].update(kinematic)
         return self.objects

@@ -10,7 +10,7 @@ carla_root: /home/hcis-s05/ysws/carla/CARLA_0.9.16
 ego_role_name: hero
 
 # agent_type: behavior | basic | constant_velocity
-agent_type: constant_velocity
+agent_type: behavior
 behavior: normal
 
 # If null, fallback to sps.ego.target_speed

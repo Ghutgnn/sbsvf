@@ -66,6 +66,7 @@ class KeyboardAV:
         self.pedal = 0
         self.wheel = 0
         self.running = True
+        return Ctrl(mode=CtrlMode.None_)
 
     def step(self, obs: dict[str, Any], dt: float) -> Ctrl:
         """

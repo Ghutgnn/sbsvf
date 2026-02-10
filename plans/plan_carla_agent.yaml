@@ -6,28 +6,39 @@ av:
   module_path: sv.av.carla_agent:CarlaAgentAV
   config_path: configs/av/carla_agent.yaml
 
+# av:
+#   module_path: sv.av.keyboard:KeyboardAV
+#   config_path: configs/av/keyboard.yaml
+
+# simulator:
+#   module_path: sv.sim.carla:CarlaAdapter
+#   config_path: ./configs/sim/simcfg_carla.yaml
 simulator:
-  module_path: sv.sim.carla:CarlaAdapter
-  config_path: ./configs/sim/simcfg_carla.yaml
+  module_path: sv.sim.esmini:EsminiAdapter
+  config_path: configs/sim/simcfg_esmini_docker.yaml
 
 map:
   name: test_map
-  carla_map_name: Town01
-  xodr_path: /home/hcis-s05/ysws/carla/CARLA_0.9.16/CarlaUE4/Content/Carla/Maps/OpenDrive/Town01.xodr
+  # carla_map_name: Town01
+  # xodr_path: /opt/carla/CARLA_0.9.16/CarlaUE4/Content/Carla/Maps/OpenDrive/Town01.xodr
+  xodr_path: /sbsvf/scenarios/mvp/maps/e6mini.xodr
   osm_path: ./scenarios/mvp/maps/e6mini_same.osm
 
 scenario:
   title: test_scenario
-  scenario_path: /home/hcis-s05/ysws/carla/scenario_runner-0.9.16/srunner/examples/PedestrianCrossingFront.xosc
+  # scenario_path: /opt/carla/scenario_runner-0.9.16/srunner/examples/PedestrianCrossingFront_Esmini.xosc
+  scenario_path: /sbsvf/scenarios/mvp/scenarios/side.xosc
   ego:
     target_speed: 50
     spawn:
       type: WorldPosition
       value: [-9.4, 152.8, 0.5, 1.57079632679]
-      speed: 0
+      speed: 30
     goal:
-      type: WorldPosition
-      value: [-9.4, -152.8, 0.5, 1.57079632679]
+      # type: WorldPosition
+      # value: [-9.4, -152.8, 0.5, 1.57079632679] # PedestrianCrossingFront_Esmini
+      type: LanePosition
+      value: [0, -4, 500, 0] # DEMO_CI_e6mini
 
 sampler:
   module_path: sv.sampler.grid_search_sampler:GridSearchSampler

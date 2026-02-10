@@ -27,7 +27,7 @@ class SimWrapper:
         else:
             self._dt_s = dt_ns / 1e9
 
-        self._url = self._sim_spec.get("url", "llt.hcislab.org:50051")
+        self._url = self._sim_spec.get("url", "localhost:50051")
         self._timeout = float(self._sim_spec.get("timeout", 10.0))
         self._sim_cfg_path = self._sim_spec.get("config_path", None)
 
@@ -51,11 +51,11 @@ class SimWrapper:
         self._stub = carla_pb2_grpc.CarlaSimStub(self._channel)
 
         # Ping
-        # try:
-        #     pong = self._stub.Ping(carla_pb2.Empty(), timeout=self._timeout)
-        #     print(f"Ping response: {pong.msg}")
-        # except grpc.RpcError as e:
-        #     raise RuntimeError(f"Ping failed: {e.code().name} - {e.details()}") from e
+        try:
+            pong = self._stub.Ping(carla_pb2.Empty(), timeout=self._timeout)
+            print(f"Ping response: {pong.msg}")
+        except grpc.RpcError as e:
+            raise RuntimeError(f"Ping failed: {e.code().name} - {e.details()}") from e
 
         cfg_struct = Struct()
         cfg_struct.update(self._sim_cfg if self._sim_cfg is not None else {})
@@ -104,7 +104,9 @@ class SimWrapper:
         #     payload=payload,
         # )
 
-        req = carla_pb2.StepRequest(ctrl_cmd=ctrl_cmd.to_pb(), timestamp_ns=int(time_stamp_ns))
+        req = carla_pb2.StepRequest(
+            ctrl_cmd=ctrl_cmd.to_pb(), timestamp_ns=int(time_stamp_ns)
+        )
         try:
             resp = self._stub.Step(req, timeout=self._timeout)
             # StepResponse { repeated ObjectState objects }

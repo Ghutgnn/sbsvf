@@ -1,16 +1,16 @@
 # CARLA simulator configuration
-host: 140.113.240.40
-port: 2000
+# host: 140.113.240.40
+# port: 2000
 timeout: 30.0
 # carla_root: /home/hcis-s05/ysws/carla/CARLA_0.9.16
-carla_root: /workspace/
+carla_root: /opt/carla/
 # carla_egg: /home/hcis-s05/ysws/carla/CARLA_0.9.16/PythonAPI/carla/dist/carla-0.9.16-cp312-cp312-manylinux_2_31_x86_64.whl
 synchronous_mode: true
 no_rendering_mode: false
 
 scenario_runner_tm_port: 8000
 scenario_runner_tm_seed: 0
-scenario_runner_path: /scenario_runner/scenario_runner.py
+scenario_runner_path: /opt/scenario_runner/scenario_runner.py
 # scenario_runner_path: /opt/carla/scenario_runner-0.9.16/scenario_runner.py
 
 ego_role_name: hero
