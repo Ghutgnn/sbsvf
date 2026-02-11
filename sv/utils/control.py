@@ -1,7 +1,7 @@
 from enum import Enum
 from dataclasses import dataclass
-from typing import Dict, Any, List, Protocol
-from carla_api import control_pb2
+from typing import Dict, Any
+from sbsvf_api import control_pb2
 from google.protobuf.struct_pb2 import Struct
 
 
