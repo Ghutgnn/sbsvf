@@ -44,19 +44,19 @@ class Runner:
         self.sps = ScenarioPack.from_dict(scenario_spec, map_spec)
 
         # SIM
-        # module = importlib.import_module(sim_spec["module_path"].split(":")[0])
-        # sim_class = getattr(module, sim_spec["module_path"].split(":")[1])
-        # self.sim = sim_class(
-        #     output_dir=self.output_dir, cfg_path=sim_spec.get("config_path", None)
-        # )
-        # self.sim.init(self._runtime_spec, self.sps)
+        module = importlib.import_module(sim_spec["module_path"].split(":")[0])
+        sim_class = getattr(module, sim_spec["module_path"].split(":")[1])
+        self.sim = sim_class(
+            output_dir=self.output_dir, cfg_path=sim_spec.get("config_path", None)
+        )
+        self.sim.init(self._runtime_spec, self.sps)
 
-        try:
-            self.sim = SimWrapper(sim_spec=sim_spec, dt_ns=int(self._dt_s * 1e9))
-            # self.sim.init(sim_spec=sim_spec, dt=self._dt_s)
-        except Exception:
-            logger.exception("Simulator initialization failed")
-            return
+        # try:
+        #     self.sim = SimWrapper(sim_spec=sim_spec, dt_ns=int(self._dt_s * 1e9))
+        #     # self.sim.init(sim_spec=sim_spec, dt=self._dt_s)
+        # except Exception:
+        #     logger.exception("Simulator initialization failed")
+        #     return
 
         # AV
         module = importlib.import_module(av_spec["module_path"].split(":")[0])

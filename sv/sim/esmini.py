@@ -92,7 +92,6 @@ class Vehicle:
             self._se.SE_SimpleVehicleGetState(self.sv_handle, ct.byref(self.vh_state))
 
         elif ctrl.mode == CtrlMode.THROTTLE_STEER_BREAK:
-            print(f"Applying control: {ctrl}")
             throttle = float(ctrl.payload.get("throttle", 0.0))
             steer = float(ctrl.payload.get("steer", 0.0))
             brake = float(ctrl.payload.get("brake", 0.0))

@@ -57,6 +57,7 @@ class CarlaAgentAV:
         self._spawn_z_offset = float(self.cfg.get("spawn_z_offset", 3.0))
 
         self._original_settings = None
+        self._spawned_actor_ids = set()
         self._carla = None
         self._BehaviorAgent = None
         self._BasicAgent = None
@@ -239,7 +240,6 @@ class CarlaAgentAV:
         end_wp = self._map.get_waypoint(
             dest, project_to_road=True, lane_type=carla.LaneType.Driving
         )
-        print(f"Setting agent destination to {dest}")
         self._agent.set_destination(end_wp.transform.location)
 
         return self.step(
@@ -268,7 +268,14 @@ class CarlaAgentAV:
         )
 
     def stop(self) -> None:
-        if self._world is not None and self._original_settings is not None:
+        if self._world is None:
+            return
+        try:
+            self._destroy_spawned_actors()
+        except Exception:
+            logger.exception("Failed to destroy spawned actors")
+
+        if self._original_settings is not None:
             try:
                 self._world.apply_settings(self._original_settings)
                 logger.info("Restored original CARLA world settings.")
@@ -311,7 +318,6 @@ class CarlaAgentAV:
             roll=0.0,
         )
         transform = self._carla.Transform(carla_pos, carla_rot)
-        print(f"Spawning ego at {carla_pos} with yaw {pos.yaw}")
         ego = self._world.try_spawn_actor(ego_bp, transform)
         if ego is None:
             logger.warning("Initial spawn failed, trying spawn points...")
@@ -401,23 +407,22 @@ class CarlaAgentAV:
                 return None
             bp_lib = self._world.get_blueprint_library()
             if obj_type == RoadObjectType.PEDESTRIAN:
-                candidates = bp_lib.filter("walker.pedestrian.*")
+                return bp_lib.find("walker.pedestrian.0001")
             elif obj_type == RoadObjectType.BUS:
-                candidates = bp_lib.filter("vehicle.*bus*")
+                return bp_lib.find("vehicle.mitsubishi.fusorosa")
             elif obj_type == RoadObjectType.TRUCK:
-                candidates = bp_lib.filter("vehicle.*truck*")
+                return bp_lib.find("vehicle.carlamotors.carlacola")
             elif obj_type == RoadObjectType.TRAILER:
-                candidates = bp_lib.filter("vehicle.*trailer*")
+                return bp_lib.find("vehicle.carlamotors.firetruck")
             elif obj_type == RoadObjectType.VAN:
-                candidates = bp_lib.filter("vehicle.*van*")
+                return bp_lib.find("vehicle.mercedes.sprinter")
             elif obj_type == RoadObjectType.MOTORCYCLE:
-                candidates = bp_lib.filter("vehicle.*motorcycle*")
+                return bp_lib.find("vehicle.vespa.zx125")
             elif obj_type == RoadObjectType.BICYCLE:
-                candidates = bp_lib.filter("vehicle.*bicycle*")
-                if not candidates:
-                    candidates = bp_lib.filter("vehicle.*bike*")
+                return bp_lib.find("vehicle.bh.crossbike")
             else:
                 candidates = bp_lib.filter("vehicle.*")
+
             if not candidates and obj_type != RoadObjectType.PEDESTRIAN:
                 candidates = bp_lib.filter("vehicle.*")
             if not candidates:
@@ -528,3 +533,23 @@ class CarlaAgentAV:
             self._world.tick()
         else:
             self._world.wait_for_tick()
+
+    def _destroy_spawned_actors(self) -> None:
+        if self._world is None:
+            return
+
+        if self._vehicle is not None:
+            try:
+                self._vehicle.destroy()
+            except Exception:
+                logger.exception("Failed to destroy ego vehicle")
+            self._vehicle = None
+
+        if not self._other_actors:
+            return
+
+        for actor in list(self._other_actors):
+            try:
+                actor.destroy()
+            except Exception:
+                logger.exception("Failed to destroy actor %s", actor.id)
