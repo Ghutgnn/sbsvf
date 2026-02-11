@@ -248,8 +248,6 @@ class CarlaAgentAV:
         )
 
     def step(self, obs: list[ObjectState], time_stamp_ns: int) -> Ctrl:
-        # if self._agent is None:
-        #     return Ctrl(mode=CtrlMode.None_, payload={})
         self._update_and_tick(obs)
         control = self._agent.run_step()
         if hasattr(self._agent, "done") and self._agent.done():

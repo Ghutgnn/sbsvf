@@ -145,7 +145,7 @@ hello_tw:
   ros2 launch autoware_launch \
     planning_simulator.launch.xml \
     map_path:=/sbsvf/scenarios/maps \
-    lanelet2_map_file:=taoyuan_minsheng_testing.osm \
+    lanelet2_map_file:=location18.osm \
     vehicle_model:=sample_vehicle \
     sensor_model:=sample_sensor_kit \
     launch_sensing:=false \
