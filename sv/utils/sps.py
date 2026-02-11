@@ -2,17 +2,10 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import List, Literal, Tuple, Any, Dict
+from typing import Any, Dict
 import yaml
 
-from carla_api import path_pb2
-from carla_api import config_pb2, control_pb2
-from carla_api import position_pb2, scenario_pb2
-
-# from carla_api import carla_pb2, carla_pb2_grpc
-# from google.protobuf import any_pb2
-# import grpc
-# from google.protobuf import any_pb2
+from sbsvf_api import path_pb2, scenario_pb2
 
 
 from sv.utils.util import get_cfg

@@ -4,11 +4,12 @@ import logging
 
 import grpc
 from google.protobuf.struct_pb2 import Struct
-from carla_api import (
-    carla_pb2,
-    carla_pb2_grpc,
+from sbsvf_api import (
+    sim_server_pb2,
+    sim_server_pb2_grpc,
     config_pb2,
     control_pb2,
+    empty_pb2,
 )
 
 from sv.utils.control import Ctrl
@@ -48,11 +49,11 @@ class SimWrapper:
     def init(self):
         # long-lived channel
         self._channel = grpc.insecure_channel(self._url)
-        self._stub = carla_pb2_grpc.CarlaSimStub(self._channel)
+        self._stub = sim_server_pb2_grpc.SimServerStub(self._channel)
 
         # Ping
         try:
-            pong = self._stub.Ping(carla_pb2.Empty(), timeout=self._timeout)
+            pong = self._stub.Ping(empty_pb2.Empty(), timeout=self._timeout)
             print(f"Ping response: {pong.msg}")
         except grpc.RpcError as e:
             raise RuntimeError(f"Ping failed: {e.code().name} - {e.details()}") from e
@@ -60,7 +61,7 @@ class SimWrapper:
         cfg_struct = Struct()
         cfg_struct.update(self._sim_cfg if self._sim_cfg is not None else {})
         config = config_pb2.Config(config=cfg_struct)
-        request = carla_pb2.InitRequest(
+        request = sim_server_pb2.SimServerMessages.InitRequest(
             config=config,
             dt=self._dt_s,
         )
@@ -79,7 +80,7 @@ class SimWrapper:
     ):
         self._ensure_ready()
 
-        req = carla_pb2.ResetRequest(
+        req = sim_server_pb2.SimServerMessages.ResetRequest(
             output_dir=str(output_dir),
             scenario_pack=scenario_pack.to_protobuf(),
             params=params,
@@ -104,7 +105,7 @@ class SimWrapper:
         #     payload=payload,
         # )
 
-        req = carla_pb2.StepRequest(
+        req = sim_server_pb2.SimServerMessages.StepRequest(
             ctrl_cmd=ctrl_cmd.to_pb(), timestamp_ns=int(time_stamp_ns)
         )
         try:
@@ -121,7 +122,7 @@ class SimWrapper:
         if self._stub is None:
             return
         try:
-            self._stub.Stop(carla_pb2.Empty(), timeout=min(self._timeout, 5.0))
+            self._stub.Stop(empty_pb2.Empty(), timeout=min(self._timeout, 5.0))
         except grpc.RpcError as e:
             logger.warning(f"[WARN] Stop failed: {e.code().name} - {e.details()}")
         finally:
@@ -136,7 +137,7 @@ class SimWrapper:
             return True
         try:
             resp = self._stub.ShouldQuit(
-                carla_pb2.Empty(), timeout=min(self._timeout, 2.0)
+                empty_pb2.Empty(), timeout=min(self._timeout, 2.0)
             )
             return bool(resp.should_quit)
         except grpc.RpcError:

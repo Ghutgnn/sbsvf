@@ -3,10 +3,9 @@ from __future__ import annotations
 import ctypes as ct
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional
 import logging
 
-from carla_api import position_pb2
+from sbsvf_api import position_pb2
 
 
 logger = logging.getLogger("esmini.rm")
