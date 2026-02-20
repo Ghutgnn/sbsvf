@@ -1,0 +1,21 @@
+host: localhost
+port: 2000
+timeout: 10.0
+carla_egg: /path/to/carla-0.9.16-cp310-...whl
+leaderboard_root: /path/to/leaderboard
+agent_entrypoint: team_code.my_agent:MyAgent
+# 或使用 agent_module/agent_class 或 agent_file
+# agent_module: team_code.my_agent
+# agent_class: MyAgent
+# agent_file: /path/to/team_code/my_agent.py
+agent_config: /path/to/config.yaml
+agent_kwargs: {}
+
+ego_role_name: hero
+yaw_sign: -1.0
+yaw_offset_deg: 0.0
+spawn_z_offset: 0.0
+max_wait_sec: 10.0
+
+use_carla_sensors: true
+sensor_tick: 0.05

@@ -1,0 +1,37 @@
+task:
+  worker_id: test_worker_01
+  output_dir: ./artifacts
+av:
+  module_path: sv.av.autoware_pure:AutowarePureAV
+  config_path: configs/av/autoware_pure.yaml
+map:
+  name: test_map
+  xodr_path: ./scenarios/mvp_distribution/maps/e6mini.xodr
+  osm_path: ./scenarios/mvp/maps/e6mini_same.osm
+scenario:
+  title: test_scenario
+  scenario_path: ./scenarios/mvp/scenarios/DEMO_CI_e6mini.xosc
+  ego:
+    target_speed: 50
+    spawn:
+      type: LanePosition
+      value:
+      - 0.0
+      - -2.0
+      - 300.0
+      - 0.0
+      speed: 50
+    goal:
+      type: LanePosition
+      value:
+      - 0.0
+      - -4.0
+      - 700.0
+      - 0.0
+simulator:
+  module_path: sv.sim.esmini:EsminiAdapter
+  config_path: configs/sim/simcfg_esmini_docker.yaml
+sampler:
+  module_path: sv.sampler.grid_search_sampler:GridSearchSampler
+runtime:
+  dt: 0.01

@@ -6,8 +6,9 @@ import logging
 from pathlib import Path
 import importlib
 
+from sv.av_wrapper import AVWrapper
 from sv.utils.sps import ScenarioPack
-from sv.sim_warpper import SimWrapper
+from sv.sim_wrapper import SimWrapper
 
 logger = logging.getLogger(__name__)
 
@@ -41,33 +42,45 @@ class Runner:
         base = Path(task_spec.get("output_dir", "artifacts")).expanduser().resolve()
         self.output_dir = base / self._id
         self.output_dir.mkdir(parents=True, exist_ok=True)
+        logger.info(f"Output directory set to: {self.output_dir}")
+
         self.sps = ScenarioPack.from_dict(scenario_spec, map_spec)
 
-        # SIM
-        module = importlib.import_module(sim_spec["module_path"].split(":")[0])
-        sim_class = getattr(module, sim_spec["module_path"].split(":")[1])
-        self.sim = sim_class(
-            output_dir=self.output_dir, cfg_path=sim_spec.get("config_path", None)
-        )
-        self.sim.init(self._runtime_spec, self.sps)
+        # # SIM
+        # module = importlib.import_module(sim_spec["module_path"].split(":")[0])
+        # sim_class = getattr(module, sim_spec["module_path"].split(":")[1])
+        # self.sim = sim_class(
+        #     output_dir=self.output_dir, cfg_path=sim_spec.get("config_path", None)
+        # )
+        # self.sim.init(self._runtime_spec, self.sps)
 
-        # try:
-        #     self.sim = SimWrapper(sim_spec=sim_spec, dt_ns=int(self._dt_s * 1e9))
-        #     # self.sim.init(sim_spec=sim_spec, dt=self._dt_s)
-        # except Exception:
-        #     logger.exception("Simulator initialization failed")
-        #     return
-
-        # AV
-        module = importlib.import_module(av_spec["module_path"].split(":")[0])
-        av_class = getattr(module, av_spec["module_path"].split(":")[1])
-        self.av = av_class(
-            output_dir=self.output_dir, cfg_path=av_spec.get("config_path", None)
-        )
-
-        # Init
         try:
-            self.av.init(self._runtime_spec, self.sps)
+            self.sim = SimWrapper(
+                output_dir=self.output_dir,
+                sim_spec=sim_spec,
+                dt_ns=int(self._dt_s * 1e9),
+            )
+            # self.sim.init(sim_spec=sim_spec, dt=self._dt_s)
+        except Exception:
+            logger.exception("Simulator initialization failed")
+            return
+
+        # # AV
+        # module = importlib.import_module(av_spec["module_path"].split(":")[0])
+        # av_class = getattr(module, av_spec["module_path"].split(":")[1])
+        # self.av = av_class(
+        #     output_dir=self.output_dir, cfg_path=av_spec.get("config_path", None)
+        # )
+        # self.av.init(self._runtime_spec, self.sps)
+
+        try:
+            self.av = AVWrapper(
+                output_dir=self.output_dir,
+                av_spec=av_spec,
+                dt_ns=int(self._dt_s * 1e9),
+                sps=self.sps,
+            )
+            # self.av.init(av_spec=av_spec, dt=self._dt_s)
         except Exception:
             logger.exception("AV initialization failed")
             return

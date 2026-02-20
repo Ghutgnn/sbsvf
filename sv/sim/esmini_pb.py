@@ -1,8 +1,16 @@
 import logging
+import subprocess
+import json
+import tempfile
+import pathlib
+import time
+from enum import Enum, auto
 from typing import Any, Optional, Union
+from sv.registry import register_sim
 from pathlib import Path
 from math import pi
 import ctypes as ct
+import yaml
 
 from sv.utils.util import get_cfg
 from sv.utils.sps import ScenarioPack
@@ -106,6 +114,12 @@ class Vehicle:
             )
             # Update vehicle state
             self._se.SE_SimpleVehicleGetState(self.sv_handle, ct.byref(self.vh_state))
+            print(
+                "ACKERMANN control applied: target_speed =",
+                target_speed,
+                "heading_to_target =",
+                heading_to_target,
+            )
 
         elif ctrl.mode == CtrlMode.POSITION:
             x = ctrl.payload.get("x", self.vh_state.x)
@@ -350,6 +364,7 @@ class EsminiAdapter:
         #         logger.info("AV engaged.")
         #     return None
 
+        ctrl = Ctrl.from_pb(ctrl)
         dt_s = (time_stamp_ns - self._time_ns) / 1e9
         self._time_ns = time_stamp_ns
 
@@ -421,7 +436,9 @@ class EsminiAdapter:
             )
             self.objects[i].update(kinematic)
 
-        return self.objects
+        objects = [i.to_pb() for i in self.objects]
+        return objects
+        # return self.objects
 
     def stop(self):
         self.se.SE_Close()
@@ -602,7 +619,9 @@ class EsminiAdapter:
             speed=float(self.objects[0].kinematic.speed),
         )
 
-        return self.objects
+        objects = [i.to_pb() for i in self.objects]
+        return objects
+        # return self.objects
 
     # define a function returning if the simulator need to stop
     def should_quit(self):

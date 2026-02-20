@@ -1,4 +1,5 @@
 from pathlib import Path
+from pprint import pprint
 from typing import Any, Optional
 import logging
 
@@ -10,6 +11,7 @@ from sbsvf_api import (
     config_pb2,
     control_pb2,
     empty_pb2,
+    path_pb2,
 )
 
 from sv.utils.control import Ctrl
@@ -20,15 +22,17 @@ logger = logging.getLogger(__name__)
 
 
 class SimWrapper:
-    def __init__(self, sim_spec: dict, dt_ns: int = None):
+    def __init__(self, output_dir: Path, sim_spec: dict, dt_ns: int = None):
         self._sim_spec = sim_spec
+        self._output_dir = output_dir
+
         if dt_ns is None:
             logger.warning("dt not specified for SimWrapper, defaulting to 0.01s")
             self._dt_s = 0.01
         else:
             self._dt_s = dt_ns / 1e9
 
-        self._url = self._sim_spec.get("url", "localhost:50051")
+        self._url = self._sim_spec.get("url", "localhost:50053")
         self._timeout = float(self._sim_spec.get("timeout", 10.0))
         self._sim_cfg_path = self._sim_spec.get("config_path", None)
 
@@ -63,6 +67,8 @@ class SimWrapper:
         config = config_pb2.Config(config=cfg_struct)
         request = sim_server_pb2.SimServerMessages.InitRequest(
             config=config,
+            # output_dir=path_pb2.Path(path=str(self._output_dir)),
+            output_dir=path_pb2.Path(path=str(".")),
             dt=self._dt_s,
         )
         response = self._stub.Init(request, timeout=self._timeout)
@@ -81,7 +87,8 @@ class SimWrapper:
         self._ensure_ready()
 
         req = sim_server_pb2.SimServerMessages.ResetRequest(
-            output_dir=str(output_dir),
+            # output_dir=path_pb2.Path(path=str(output_dir)),
+            output_dir=path_pb2.Path(path=str(".")),
             scenario_pack=scenario_pack.to_protobuf(),
             params=params,
         )
@@ -106,7 +113,7 @@ class SimWrapper:
         # )
 
         req = sim_server_pb2.SimServerMessages.StepRequest(
-            ctrl_cmd=ctrl_cmd.to_pb(), timestamp_ns=int(time_stamp_ns)
+            ctrl_cmd=ctrl_cmd, timestamp_ns=int(time_stamp_ns)
         )
         try:
             resp = self._stub.Step(req, timeout=self._timeout)

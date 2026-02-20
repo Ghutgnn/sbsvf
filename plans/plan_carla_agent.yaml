@@ -2,20 +2,24 @@ task:
   worker_id: test_worker_carla_agent
   output_dir: ./artifacts
 
+# av:
+#   module_path: sv.av.carla_agent:CarlaAgentAV
+#   config_path: configs/av/carla_agent.yaml
+
 av:
-  module_path: sv.av.carla_agent:CarlaAgentAV
-  config_path: configs/av/carla_agent.yaml
+  module_path: sv.av.autoware_pure:AutowarePureAV
+  config_path: configs/av/autoware_pure.yaml
 
 # av:
 #   module_path: sv.av.keyboard:KeyboardAV
 #   config_path: configs/av/keyboard.yaml
 
-# simulator:
-#   module_path: sv.sim.carla:CarlaAdapter
-#   config_path: ./configs/sim/simcfg_carla.yaml
 simulator:
-  module_path: sv.sim.esmini:EsminiAdapter
-  config_path: configs/sim/simcfg_esmini_docker.yaml
+  module_path: sv.sim.carla:CarlaAdapter
+  config_path: ./configs/sim/simcfg_carla.yaml
+# simulator:
+#   module_path: sv.sim.esmini:EsminiAdapter
+#   config_path: configs/sim/simcfg_esmini_docker.yaml
 
 map:
   name: test_map

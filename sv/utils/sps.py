@@ -39,9 +39,9 @@ class GoalConfig:
 @dataclass
 class EgoConfig:
     target_speed: float
-    spawn: SpawnConfig
     # check_points: List[CheckPointConfig]
     goal: GoalConfig
+    spawn: SpawnConfig = field(default=None)  # 如果 spawn 是選填的話
 
     # ---- 解析 YAML 的工廠方法 ----
     @classmethod
@@ -62,34 +62,34 @@ class EgoConfig:
                 f"ego.target_speed 必須是數字，現在是 {ego.get('target_speed')!r}"
             )
 
-        try:
-            spawn_raw = ego["spawn"]
-        except KeyError:
-            raise ValueError("ego.spawn 未設定")
+        # try:
+        #     spawn_raw = ego["spawn"]
+        # except KeyError:
+        #     raise ValueError("ego.spawn 未設定")
 
-        if spawn_raw["type"] == "LanePosition":
-            spawn_pos = position_factory.from_lane(
-                road_id=int(spawn_raw["value"][0]),
-                lane_id=int(spawn_raw["value"][1]),
-                s=float(spawn_raw["value"][2]),
-                offset=(
-                    float(spawn_raw["value"][3]) if len(spawn_raw["value"]) > 3 else 0.0
-                ),
-            )
-        elif spawn_raw["type"] == "WorldPosition":
-            spawn_pos = position_factory.from_world(
-                x=float(spawn_raw["value"][0]),
-                y=float(spawn_raw["value"][1]),
-                z=float(spawn_raw["value"][2]),
-                h=float(spawn_raw["value"][3]) if len(spawn_raw["value"]) > 3 else 0.0,
-                p=float(spawn_raw["value"][4]) if len(spawn_raw["value"]) > 4 else 0.0,
-                r=float(spawn_raw["value"][5]) if len(spawn_raw["value"]) > 5 else 0.0,
-            )
+        # if spawn_raw["type"] == "LanePosition":
+        #     spawn_pos = position_factory.from_lane(
+        #         road_id=int(spawn_raw["value"][0]),
+        #         lane_id=int(spawn_raw["value"][1]),
+        #         s=float(spawn_raw["value"][2]),
+        #         offset=(
+        #             float(spawn_raw["value"][3]) if len(spawn_raw["value"]) > 3 else 0.0
+        #         ),
+        #     )
+        # elif spawn_raw["type"] == "WorldPosition":
+        #     spawn_pos = position_factory.from_world(
+        #         x=float(spawn_raw["value"][0]),
+        #         y=float(spawn_raw["value"][1]),
+        #         z=float(spawn_raw["value"][2]),
+        #         h=float(spawn_raw["value"][3]) if len(spawn_raw["value"]) > 3 else 0.0,
+        #         p=float(spawn_raw["value"][4]) if len(spawn_raw["value"]) > 4 else 0.0,
+        #         r=float(spawn_raw["value"][5]) if len(spawn_raw["value"]) > 5 else 0.0,
+        #     )
 
-        spawn = SpawnConfig(
-            position=spawn_pos,
-            speed=float(spawn_raw["speed"]),
-        )
+        # spawn = SpawnConfig(
+        #     position=spawn_pos,
+        #     speed=float(spawn_raw["speed"]),
+        # )
 
         try:
             goal_raw = ego["goal"]
@@ -119,7 +119,7 @@ class EgoConfig:
         position_factory.close()
         return cls(
             target_speed=target_speed,
-            spawn=spawn,
+            # spawn=spawn,
             # check_points=check_points,
             goal=goal,
         )
@@ -159,7 +159,7 @@ class EgoConfig:
     def to_protobuf(self) -> scenario_pb2.EgoConfig:
         return scenario_pb2.EgoConfig(
             target_speed=self.target_speed,
-            spawn_config=self.spawn.to_protobuf(),
+            # spawn_config=self.spawn.to_protobuf(),
             # check_points=[cp.to_protobuf() for cp in self.check_points],
             goal_config=self.goal.to_protobuf(),
         )
@@ -217,7 +217,12 @@ class ScenarioPack:
     ) -> "ScenarioPack":
         name = scenario_spec["title"]
         scenarios = {"xosc": Path(scenario_spec["scenario_path"]).resolve()}
-        maps = map_spec.copy()
+        # maps = map_spec.copy()
+        maps = {}
+        for fmt, p in map_spec.items():
+            if fmt == "name":
+                continue  # 跳過 name 欄位
+            maps[fmt] = Path(p).resolve()
         ego = EgoConfig.from_dict(
             scenario_spec["ego"],
             xodr_path=Path(maps["xodr_path"]).resolve(),

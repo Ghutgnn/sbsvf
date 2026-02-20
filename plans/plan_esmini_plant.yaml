@@ -1,0 +1,36 @@
+task:
+  job_id: esmini_plant_worker
+  output_dir: ./artifacts
+av:
+  module_path: sv.av.plant_wrapper:PlantAgent
+  config_path: configs/av/avcfg_plant.yaml
+
+simulator:
+  module_path: sv.sim.esmini:EsminiAdapter
+  config_path: configs/sim/simcfg_esmini_docker.yaml
+
+map:
+  name: test_map
+  xodr_path: ./scenarios/mvp_distribution/maps/e6mini.xodr
+  osm_path: ./scenarios/mvp/maps/e6mini_same.osm
+  dummy: ./scenarios/mvp/maps/DEMO_CI_dummy.xosc
+scenario:
+  title: test_scenario
+  # scenario_path: ./scenarios/carla_scenario/scenarios/DEMO_CI_e6mini.xosc
+  scenario_path: ./scenarios/mvp/scenarios/DEMO_CI_e6mini.xosc
+  # param_path: ./scenarios/mvp_distribution/range.xosc
+  ego:
+    target_speed: 50
+    spawn:
+      type: LanePosition
+      value: [0, -2, 300, 0]
+      speed: 40
+    goal:
+      type: LanePosition
+      value: [0, -4, 700, 0]
+
+sampler:
+  module_path: sv.sampler.grid_search_sampler:GridSearchSampler
+
+runtime:
+  dt: 0.01

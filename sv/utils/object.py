@@ -6,7 +6,7 @@ from sbsvf_api import object_pb2
 
 
 class RoadObjectType(Enum):
-    UNKNOWN = auto()
+    UNKNOWN = 0
     CAR = auto()
     TRUCK = auto()
     BUS = auto()
@@ -23,7 +23,7 @@ class RoadObjectType(Enum):
 
 
 class ShapeType(Enum):
-    BOUNDING_BOX = auto()
+    BOUNDING_BOX = 0
     CYLINDER = auto()
     POLYGON = auto()
 
@@ -144,6 +144,40 @@ class ObjectState:
         if pb.HasField("shape"):
             shape = Shape.from_pb(pb.shape)
         return cls.create(type=obj_type, kinematic=kinematic, shape=shape)
+
+    def to_pb(self) -> object_pb2.ObjectState:
+        obj_type_value = self._type.value if self._type in RoadObjectType else 0
+        kinematic_pb = object_pb2.ObjectKinematic(
+            time_ns=self.kinematic.time_ns,
+            x=self.kinematic.x,
+            y=self.kinematic.y,
+            z=self.kinematic.z,
+            yaw=self.kinematic.yaw,
+            speed=self.kinematic.speed,
+            acceleration=self.kinematic.acceleration,
+            yaw_rate=self.kinematic.yaw_rate,
+            yaw_acceleration=self.kinematic.yaw_acceleration,
+        )
+        shape_pb = None
+        if self._shape is not None:
+            shape_pb = object_pb2.Shape(
+                type=self._shape.type.value if self._shape.type in ShapeType else 0,
+                dimensions=object_pb2.Shape.Dimension(
+                    x=self._shape.dimensions[0],
+                    y=self._shape.dimensions[1],
+                    z=self._shape.dimensions[2],
+                ),
+            )
+            # if (
+            #     self._shape.type == ShapeType.POLYGON
+            #     and self._shape.footprint is not None
+            # ):
+            #     shape_pb.Shape.Vertex(
+            #         object_pb2.Vector2(x=pt[0], y=pt[1]) for pt in self._shape.footprint
+            #     )
+        return object_pb2.ObjectState(
+            type=obj_type_value, kinematic=kinematic_pb, shape=shape_pb
+        )
 
     def update(self, kinematic: ObjectKinematic) -> None:
         self.kinematic = kinematic

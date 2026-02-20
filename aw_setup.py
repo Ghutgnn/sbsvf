@@ -216,6 +216,27 @@ RULES = [
         "nested_key": "detection_method",  #   detection_method:
         "value": "predicted_object",
     },
+    {
+        "name": "enable_correct_goal_pose -> true",
+        "file": "/opt/autoware/share/autoware_launch/config/planning/mission_planning/mission_planner/mission_planner.param.yaml",
+        "type": "rosparam",
+        "param": "enable_correct_goal_pose",
+        "value": True,
+    },
+    {
+        "name": "check_footprint_inside_lanes -> false",
+        "file": "/opt/autoware/share/autoware_launch/config/planning/mission_planning/mission_planner/mission_planner.param.yaml",
+        "type": "rosparam",
+        "param": "check_footprint_inside_lanes",
+        "value": False,
+    },
+    {
+        "name": "allow_reroute_in_autonomous_mode -> true",
+        "file": "/opt/autoware/share/autoware_launch/config/planning/mission_planning/mission_planner/mission_planner.param.yaml",
+        "type": "rosparam",
+        "param": "allow_reroute_in_autonomous_mode",
+        "value": True,
+    },
 ]
 
 

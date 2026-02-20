@@ -1,10 +1,12 @@
 task:
   worker_id: test_worker_01
-  output_dir: ./artifacts
+  output_dir: /output
 # av:
 #   module_path: sv.av.keyboard:KeyboardAV
 #   config_path: configs/av/keyboard.yaml
 av:
+  url: llt.hcislab.org:50052
+  timeout: 100.0
   module_path: sv.av.autoware_pure_pb:AutowarePureAV
   config_path: configs/av/autoware_pure.yaml
 
@@ -18,11 +20,11 @@ map:
   carla_map_name: Town01
   xodr_path: /opt/carla/CARLA_0.9.16/CarlaUE4/Content/Carla/Maps/OpenDrive/Town01.xodr
   # xodr_path: /workspace/CarlaUE4/Content/Carla/Maps/OpenDrive/Town01.xodr
-  osm_path: /autoware_map/carla_town1/lanelet2_map.osm
+  osm_path: /map/carla_town1/lanelet2_map.osm
 
 scenario:
   title: test_scenario
-  scenario_path: /scenario_runner/srunner/examples/PedestrianCrossingFront.xosc
+  scenario_path: /opt/scenario_runner/srunner/examples/PedestrianCrossingFront.xosc
   # scenario_path: /opt/carla/scenario_runner-0.9.16/srunner/examples/PedestrianCrossingFront.xosc
 
   # param_path: ./scenarios/mvp_distribution/range.xosc

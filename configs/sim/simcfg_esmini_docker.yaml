@@ -9,7 +9,7 @@ path:
 use_viewer: 1 # 11 # Bitmask: 1=viewer on/off, 2=off-screen only, 4=capture-to-file, 8=disable info-text. Ex1: 0=>No viewer, ex2:1+2=3=>Off-screen
 threads: 0 # 0=single thread, 1=viewer in a separate thread, parallel to scenario engine
 record: 0 # Create recording for later playback 0=no recording 1=recording
-disable_stdout: true
+disable_stdout: false
 log_file_path: ./esmini_log.txt
 dat_file_path: ./esmini_record.dat
 window: [60, 1920, 1920, 2160] # [xpos, ypos, width, height]

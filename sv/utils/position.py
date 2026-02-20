@@ -281,7 +281,7 @@ class PositionFactory:
 
             pos = self._make_snapshot_from_handle(handle)
             logger.info(
-                "Position snapshot from lane: road=%d lane=%d s=%.3f offset=%.3f -> x=%.3f y=%.3f z=%.3f",
+                "Position snapshot from lane: road=%d lane=%d s=%.3f offset=%.3f -> x=%.3f y=%.3f z=%.3f h=%.3f p=%.3f r=%.3f",
                 road_id,
                 lane_id,
                 s,
@@ -289,6 +289,9 @@ class PositionFactory:
                 pos.x,
                 pos.y,
                 pos.z,
+                pos.h,
+                pos.p,
+                pos.r,
             )
             return pos
         finally:
@@ -323,10 +326,13 @@ class PositionFactory:
 
             pos = self._make_snapshot_from_handle(handle)
             logger.info(
-                "Position snapshot from world: x=%.3f y=%.3f z=%.3f -> road=%d lane=%d s=%.3f offset=%.3f",
+                "Position snapshot from world: x=%.3f y=%.3f z=%.3f h=%.3f p=%.3f r=%.3f -> road=%d lane=%d s=%.3f offset=%.3f",
                 x,
                 y,
                 z,
+                pos.h,
+                pos.p,
+                pos.r,
                 pos.road_id,
                 pos.lane_id,
                 pos.s,

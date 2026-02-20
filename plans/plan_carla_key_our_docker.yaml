@@ -9,6 +9,7 @@ av:
   config_path: configs/av/autoware_pure.yaml
 
 simulator:
+  url: llt
   module_path: sv.sim.carla:CarlaAdapter
   config_path: ./configs/sim/simcfg_carla_docker.yaml
 
